@@ -5,7 +5,6 @@ from __future__ import division, print_function
 from typing import Optional
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 
 __author__ = "Marcos Duarte, https://github.com/demotu/BMC"

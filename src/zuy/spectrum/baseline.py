@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 from numpy import ndarray
-import scipy as sp
+import scipy as sp  # type: ignore
 
 
 def baseline_subtract_classic(

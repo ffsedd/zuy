@@ -1,5 +1,5 @@
 """
-Usage: uv run src/zuy/semeds/parse_gli_semeds_results/main.py /path/to/directory
+Usage: uv run src/zuy/semeds/main.py /path/to/directory
 
 """
 
@@ -13,12 +13,12 @@ from cycler import cycler
 from matplotlib.ticker import MultipleLocator
 
 from zuy.common.logger import setup_logger
-from zuy.semeds.parse_gli_semeds_results.merge_xlsx import merge_xlsx
-from zuy.semeds.parse_gli_semeds_results.df_cleanup import clean_df
-from zuy.semeds.parse_gli_semeds_results.split_samples import split_samples
-from zuy.semeds.parse_gli_semeds_results.save_outputs import save_output
-from zuy.semeds.parse_gli_semeds_results.copy_result import copy_results
-from zuy.semeds.parse_gli_semeds_results.convert_spectra import (
+from zuy.semeds.merge_xlsx import merge_xlsx
+from zuy.semeds.df_cleanup import clean_df
+from zuy.semeds.split_samples import split_samples
+from zuy.semeds.save_outputs import save_output
+from zuy.semeds.copy_result import copy_results
+from zuy.semeds.convert_spectra import (
     convert_spectra_txt_to_msa,
 )
 from zuy.common.zlib import find_zakazky_dir, zak_dict
@@ -30,6 +30,7 @@ register_sqrt_scale()
 logger = setup_logger(__name__)
 
 COPY_RESULT = True
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -53,24 +54,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     src_dpath: Path = args.src.resolve()
-    # trg_dpath: Path | None = args.trg.resolve() if args.trg is not None else None 
+    # trg_dpath: Path | None = args.trg.resolve() if args.trg is not None else None
 
     # if trg_dpath is not None:
     # logger.info(f"Target directory: {trg_dpath}")
     zak_dir = find_zakazky_dir()
     zmap = zak_dict(zak_dir)
 
-    
-    # if 1:
-    #     args = parse_args()
-    #     src_dpath: Path = args.src
-    #     trg_dpath: Path = args.trg
-    # else:
-    #     src_dpath = Path("/home/m/Dropbox/ZUMI/zakazky/ZADANI-SEM/sem-25-09")
-    #     trg_dpath = Path("/home/m/Dropbox/ZUMI/zakazky/2536_Fogaš/pytex/sem/")
-
-
-    
     outdir = src_dpath / "processed"
     outdir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Starting processing in directory: {src_dpath}")
@@ -119,7 +109,7 @@ def main() -> None:
 
     for src_dpath in src_dpaths:
 
-        fpaths = natsort.natsorted([f for f in src_dpath.glob("*.msa")], key=str)
+        fpaths = natsort.natsorted([f for f in src_dpath.glob("*.msa")], key=str)  # type: ignore
         logger.info(f"Plotting spectra in directory: {src_dpath}")
 
         plt.figure(figsize=(10, 4.9))

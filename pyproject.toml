@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sempy = "zuy.semeds.parse_gli_semeds_results.main:main"
+sempy = "zuy.semeds.main:main"
 
 [build-system]
 requires = ["hatchling"]
