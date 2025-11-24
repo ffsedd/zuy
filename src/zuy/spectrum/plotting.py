@@ -10,7 +10,27 @@ def plot_spectrum(
     mph_perc: float = 1,
     mpd: int = 5,
     thl_perc: float = 0.05,
-):
+) -> None:
+    """
+    Plot a single spectrum and annotate peaks.
+
+    Parameters
+    ----------
+    s : Spectrum
+        Spectrum to plot.
+    ax : matplotlib.axes.Axes | None, optional
+        Axes to plot on. If None, a new figure is created.
+    mph_perc : float, optional
+        Minimum peak height as a percentage of the maximum amplitude.
+    mpd : int, optional
+        Minimum peak distance in samples.
+    thl_perc : float, optional
+        Threshold relative to neighbors for peak detection.
+
+    Returns
+    -------
+    None
+    """
     y = s.y
     x = s.x
     y_max = y.max()

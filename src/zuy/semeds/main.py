@@ -22,7 +22,9 @@ from zuy.semeds.convert_spectra import (
     convert_spectra_txt_to_msa,
 )
 from zuy.common.zlib import find_zakazky_dir, zak_dict
-from zuy.spectrum.emsa import EmsaSpectrum
+from zuy.spectrum.plotting import plot_spectrum
+from zuy.spectrum.processing import smooth, baseline_correction
+from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.squre_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
@@ -42,12 +44,7 @@ def parse_args() -> argparse.Namespace:
         help="Path to the directory containing XLSX and spectra files",
         default=".",
     )
-    # parser.add_argument(
-    #     "--copy_result",
-    #     type=bool,
-    #     help="Path to the target directory in pytex folder",
-    #     default=None,
-    # )
+
     return parser.parse_args()
 
 
@@ -115,11 +112,11 @@ def main() -> None:
         plt.figure(figsize=(10, 4.9))
 
         for f in fpaths:
-            s = EmsaSpectrum.from_msa(f)
-            s.smooth(5)
-            s.baseline_correction(y_offset=15)
+            s = parse_msa_file(f)
+            s.y = smooth(s.y, 5)
+            s.y = baseline_correction(s.y, y_offset=15)
             logger.info(f"Plotting: {f.name}")
-            s.plot(mph_perc=0.1, mpd=2, thl_perc=0.03)
+            plot_spectrum(s, mph_perc=0.1, mpd=2, thl_perc=0.03)
 
         ax = plt.gca()
         ax.set_title(src_dpath.name)
