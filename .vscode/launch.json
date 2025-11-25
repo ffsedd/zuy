@@ -9,7 +9,11 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "args": [
+                "/home/m/Dropbox/ZUMI/zakazky/ZADANI-SEM/sem-25-10/141125",
+
+            ]
         }
     ]
 }

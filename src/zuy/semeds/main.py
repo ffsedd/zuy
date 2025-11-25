@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict
 import argparse
 import natsort
+import shutil
 import pandas as pd  # type: ignore
 import matplotlib.pyplot as plt
 from cycler import cycler
@@ -14,13 +15,14 @@ from matplotlib.ticker import MultipleLocator
 
 from zuy.common.logger import setup_logger
 from zuy.semeds.merge_xlsx import merge_xlsx
-from zuy.semeds.df_cleanup import clean_df
-from zuy.semeds.split_samples import split_samples
+from zuy.semeds.df_split import df_split
+from zuy.semeds.models import ZakazkaSample
+from zuy.semeds.clean_df import clean_df
 from zuy.semeds.save_outputs import save_output
-from zuy.semeds.copy_result import copy_results
 from zuy.semeds.convert_spectra import (
     convert_spectra_txt_to_msa,
 )
+
 from zuy.common.zlib import find_zakazky_dir, zak_dict
 from zuy.spectrum.plotting import plot_spectrum
 from zuy.spectrum.processing import smooth, baseline_correction
@@ -44,7 +46,9 @@ def parse_args() -> argparse.Namespace:
         help="Path to the directory containing XLSX and spectra files",
         default=".",
     )
-
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing files"
+    )
     return parser.parse_args()
 
 
@@ -63,28 +67,44 @@ def main() -> None:
     logger.info(f"Starting processing in directory: {src_dpath}")
 
     # %% Merge XLSX files
-    logger.info("Merge XLSX files into DataFrames by category...")
-    merged: Dict[str, pd.DataFrame] = merge_xlsx(src_dpath)
-    if "weight" not in merged:
-        logger.warning("No 'weight' tables found. Exiting.")
-        return
-
-    # %% Save raw merged weight DataFrame
-    df_weight = merged["weight"]
     weight_merged_path = outdir / "weight_merged.xlsx"
-    df_weight.to_excel(weight_merged_path, index=False)
-    logger.info(f"...saved: {weight_merged_path} (shape={df_weight.shape})")
 
+    if not weight_merged_path.exists() or args.overwrite:
+        logger.info("Merge XLSX files into DataFrames by category...")
+        merged: Dict[str, pd.DataFrame] = merge_xlsx(src_dpath)
+        if "weight" not in merged:
+            logger.warning("No 'weight' tables found. Exiting.")
+            return
+
+        # %% Save raw merged weight DataFrame
+        df_weight = merged["weight"]
+
+        df_weight.to_excel(weight_merged_path, index=False)
+        logger.info(f"...saved: {weight_merged_path} (shape={df_weight.shape})")
+    else:
+        df_weight = pd.read_excel(weight_merged_path)
+
+    logger.info(
+        f"DataFrame loaded: {weight_merged_path} (shape={df_weight.shape} {df_weight.head()})"
+    )
     # %% Clean and normalize merged DataFrame
     logger.info("Clean and normalize merged DataFrame...")
-    df_clean = clean_df(df_weight)
-    weight_clean_path = outdir / "weight_clean.xlsx"
-    df_clean.to_excel(weight_clean_path, index=False)
-    logger.info(f"...saved: {weight_clean_path} (shape={df_clean.shape})")
 
+    weight_clean_path = outdir / "weight_clean.xlsx"
+    if not weight_clean_path.exists() or args.overwrite:
+        df_clean = clean_df(df_weight)
+        df_clean.to_excel(weight_clean_path)
+        logger.info(f"...saved: {weight_clean_path} (shape={df_clean.shape})")
+    else:
+        df_clean = pd.read_excel(weight_clean_path, index_col=(0, 1, 2), header=0)
+
+    logger.info(
+        f"DataFrame loaded: {weight_clean_path} \t (shape={df_clean.shape} \n {df_clean.head()})"
+    )
     # %% Split cleaned data into samples and save outputs
     logger.info("Split cleaned data into samples...")
-    samples: Dict[str, pd.DataFrame] = split_samples(df_clean)
+    samples: Dict[ZakazkaSample, pd.DataFrame] = df_split(df_clean)
+    logger.info(f"...split into {len(samples)} samples: {samples.keys()}")
     save_output(samples, outdir)
     logger.info(f"...saved outputs to {outdir}")
 
@@ -133,13 +153,27 @@ def main() -> None:
 
         # %% Copy result
         if COPY_RESULT:
-            try:
-                zak = int(src_dpath.name[:4])
-                trg_dpath = zmap[zak] / "pytex/sem"
-                trg_dpath.mkdir(parents=True, exist_ok=True)
-                copy_results(src_dpath, trg_dpath)
-            except KeyError:
+            zak = int(src_dpath.name[:4])
+            if zak not in zmap:
                 logger.warning(f"Zakazka {src_dpath.name[:4]} not found.")
+                continue
+
+            trg_dpath = zmap[zak] / "pytex/sem"
+            for fp in src_dpath.iterdir():
+
+                if fp.suffix in (
+                    ".pdf",
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".tex",
+                    ".xlsx",
+                    ".msa",
+                ):
+                    shutil.copy(fp, trg_dpath)
+                    logger.info(f"copied: {fp.name}")
+                # else:
+                #     logger.warning(f"Unknown file type: {fp}")
 
 
 if __name__ == "__main__":

@@ -1,55 +1,37 @@
 from typing import Dict
-import pandas as pd  #   type: ignore
-import logging
-
-logger = logging.getLogger(__name__)
+import pandas as pd  # type: ignore
+from .models import ZakazkaSample
 
 
-def split_samples(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+def split_samples(
+    df: pd.DataFrame,
+) -> Dict[ZakazkaSample, pd.DataFrame]:
     """
-    Split a DataFrame into per-sample DataFrames.
+    Split a MultiIndex DataFrame with ['Zakazka','Sample'] into separate DataFrames
+    per ZakazkaSample key.
 
-    Steps:
-    - Expect 'Project Path' column already split into 'Sample'.
-    - Clean and normalize columns.
-    - Split into dict {sample_name: DataFrame}.
+    Returns
+    -------
+    dict
+        {ZakazkaSample: DataFrame}, where each DataFrame contains rows for that
+        specific Zakazka and measurement Sample.
     """
-    samples = {}
+    if not isinstance(df.index, pd.MultiIndex):
+        raise ValueError("DataFrame must have a MultiIndex ['Zakazka', 'Sample']")
+    if df.index.names != ["Zakazka", "Sample"]:
+        raise ValueError(
+            f"Expected MultiIndex names ['Zakazka', 'Sample'], got {df.index.names}"
+        )
 
-    if "Sample" not in df.columns:
-        raise ValueError("Input DataFrame must contain a 'Sample' column")
+    split_dfs: Dict[ZakazkaSample, pd.DataFrame] = {}
+    # groupby returns tuples matching the levels
+    for (zakazka, sample), dfi in df.groupby(level=["Zakazka", "Sample"]):
+        # Drop columns that are all NaN
+        dfi_clean = dfi.dropna(axis=1, how="all")
+        # Optional: convert numeric columns if desired
+        dfi_clean = dfi_clean.apply(pd.to_numeric, errors="coerce")
 
-    # Clean 'No' column: remove non-digits
-    if "No" in df.columns:
-        df["No"] = df["No"].astype(str).str.extract(r"(\d+)", expand=False)
+        key = ZakazkaSample(zakazka=zakazka, sample=int(sample))
+        split_dfs[key] = dfi_clean.copy()
 
-    # Drop rows missing 'Sample'
-    df = df.dropna(subset=["Sample"])
-
-    # Process each sample
-    for s in sorted(df["Sample"].unique()):
-        dfi = df[df["Sample"] == s].copy()
-
-        # Drop helper columns if present
-        for col in ["Project Path", "Path", "Sample", "Site"]:
-            if col in dfi.columns:
-                dfi = dfi.drop(columns=[col])
-
-        # Remove any NaN columns
-
-        dfi = dfi.loc[:, dfi.columns.dropna()]
-        dfi = dfi.drop(columns=["source_file", "Zakazka", "Project"])
-
-        # Convert to numeric where possible
-        try:
-            dfi = dfi.apply(pd.to_numeric, errors="coerce")
-        except ValueError:
-            logger.warning("Could not convert all columns to numeric")
-
-        # Sort by measurement number
-        if "No" in dfi.columns:
-            dfi = dfi.sort_values(by="No")
-
-        samples[s] = dfi.reset_index(drop=True)
-
-    return samples
+    return split_dfs

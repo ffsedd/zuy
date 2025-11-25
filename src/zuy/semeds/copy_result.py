@@ -20,6 +20,19 @@ def copy_msa_files(src_dir: Path, target_dir: Path) -> None:
         print(f"{f} -> {dest}")
         shutil.copy(f, dest)
 
+
+def copy_tex_files(src_dir: Path, target_dir: Path) -> None:
+    """Copy only .msa files from src_dir into target_dir."""
+    target_dir.mkdir(exist_ok=True, parents=True)
+
+    for f in src_dir.rglob("*.tex"):
+        dest_dir = target_dir / f.parent.name
+        dest_dir.mkdir(exist_ok=True, parents=True)
+        dest = dest_dir / f.name
+        print(f"{f} -> {dest}")
+        shutil.copy(f, dest)
+
+
 def copy_results(src_path: Path, target_path: Path) -> None:
     """Copy spectra files from src_path to target_path."""
     if not src_path.exists():
@@ -27,7 +40,6 @@ def copy_results(src_path: Path, target_path: Path) -> None:
     target_path.mkdir(exist_ok=True, parents=True)
     copy_plotted_spectra(src_path, target_path)
     copy_msa_files(src_path, target_path)
-
 
 
 if __name__ == "__main__":
