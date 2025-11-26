@@ -6,10 +6,10 @@ Usage: uv run src/zuy/semeds/main.py /path/to/directory
 from pathlib import Path
 from typing import Dict
 import argparse
-import natsort
+import natsort  # type: ignore
 import shutil
 import pandas as pd  # type: ignore
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 from cycler import cycler
 from matplotlib.ticker import MultipleLocator
 
@@ -66,41 +66,39 @@ def main() -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Starting processing in directory: {src_dpath}")
 
+    # %% Rename files   # TODO
+    # 1111_1 -> 1111v1
+
+    #
+
     # %% Merge XLSX files
     weight_merged_path = outdir / "weight_merged.xlsx"
 
-    if not weight_merged_path.exists() or args.overwrite:
-        logger.info("Merge XLSX files into DataFrames by category...")
-        merged: Dict[str, pd.DataFrame] = merge_xlsx(src_dpath)
-        if "weight" not in merged:
-            logger.warning("No 'weight' tables found. Exiting.")
-            return
-
-        # %% Save raw merged weight DataFrame
-        df_weight = merged["weight"]
-
-        df_weight.to_excel(weight_merged_path, index=False)
-        logger.info(f"...saved: {weight_merged_path} (shape={df_weight.shape})")
+    if weight_merged_path.exists() and not args.overwrite:
+        weight_df = pd.read_excel(weight_merged_path)  # Load if exists
+        logger.info(f"DataFrame loaded: {weight_merged_path} (shape={weight_df.shape})")
     else:
-        df_weight = pd.read_excel(weight_merged_path)
+        logger.info("Merge XLSX files into DataFrames by category...")
+        merged_df: Dict[str, pd.DataFrame] = merge_xlsx(src_dpath)
+        if "weight" not in merged_df:
+            raise ValueError("No 'weight' tables found. Exiting.")
+        # Save raw merged weight DataFrame
+        weight_df = merged_df["weight"]
+        weight_df.to_excel(weight_merged_path, index=False)
+        logger.info(f"...saved: {weight_merged_path} (shape={weight_df.shape})")
 
-    logger.info(
-        f"DataFrame loaded: {weight_merged_path} (shape={df_weight.shape} {df_weight.head()})"
-    )
     # %% Clean and normalize merged DataFrame
     logger.info("Clean and normalize merged DataFrame...")
 
     weight_clean_path = outdir / "weight_clean.xlsx"
-    if not weight_clean_path.exists() or args.overwrite:
-        df_clean = clean_df(df_weight)
+    if weight_clean_path.exists() and not args.overwrite:
+        df_clean = pd.read_excel(weight_clean_path, index_col=(0, 1, 2), header=0)
+        logger.info(f"DataFrame loaded: {weight_clean_path} (shape={df_clean.shape})")
+    else:
+        df_clean = clean_df(weight_df)
         df_clean.to_excel(weight_clean_path)
         logger.info(f"...saved: {weight_clean_path} (shape={df_clean.shape})")
-    else:
-        df_clean = pd.read_excel(weight_clean_path, index_col=(0, 1, 2), header=0)
 
-    logger.info(
-        f"DataFrame loaded: {weight_clean_path} \t (shape={df_clean.shape} \n {df_clean.head()})"
-    )
     # %% Split cleaned data into samples and save outputs
     logger.info("Split cleaned data into samples...")
     samples: Dict[ZakazkaSample, pd.DataFrame] = df_split(df_clean)
