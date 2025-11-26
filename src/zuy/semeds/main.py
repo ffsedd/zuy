@@ -19,10 +19,7 @@ from zuy.semeds.df_split import df_split
 from zuy.semeds.models import ZakazkaSample
 from zuy.semeds.clean_df import clean_df
 from zuy.semeds.save_outputs import save_output
-from zuy.semeds.convert_spectra import (
-    convert_spectra_txt_to_msa,
-)
-
+from zuy.semeds.convert_spectra import convert_spectra_txt_to_msa
 from zuy.common.zlib import find_zakazky_dir, zak_dict
 from zuy.spectrum.plotting import plot_spectrum
 from zuy.spectrum.processing import smooth, baseline_correction
@@ -103,7 +100,7 @@ def main() -> None:
     logger.info("Split cleaned data into samples...")
     samples: Dict[ZakazkaSample, pd.DataFrame] = df_split(df_clean)
     logger.info(f"...split into {len(samples)} samples: {samples.keys()}")
-    save_output(samples, outdir)
+    save_output(samples, outdir, overwrite=args.overwrite)
     logger.info(f"...saved outputs to {outdir}")
 
     # %% Convert spectra files
@@ -126,28 +123,33 @@ def main() -> None:
 
         fpaths = natsort.natsorted([f for f in src_dpath.glob("*.msa")], key=str)  # type: ignore
         logger.info(f"Plotting spectra in directory: {src_dpath}")
+        spectra_fp = src_dpath / f"{src_dpath.name}_spectra.pdf"
 
-        plt.figure(figsize=(10, 4.9))
+        if spectra_fp.exists() and not args.overwrite:
+            logger.info(f"Skipping existing file: {spectra_fp}")
+            continue
+        else:
+            plt.figure(figsize=(10, 4.9))
 
-        for f in fpaths:
-            s = parse_msa_file(f)
-            s.y = smooth(s.y, 5)
-            s.y = baseline_correction(s.y, y_offset=15)
-            logger.info(f"Plotting: {f.name}")
-            plot_spectrum(s, mph_perc=0.1, mpd=2, thl_perc=0.03)
+            for f in fpaths:
+                s = parse_msa_file(f)
+                s.y = smooth(s.y, 5)
+                s.y = baseline_correction(s.y, y_offset=15)
+                logger.info(f"Plotting: {f.name}")
+                plot_spectrum(s, mph_perc=0.1, mpd=2, thl_perc=0.03)
 
-        ax = plt.gca()
-        ax.set_title(src_dpath.name)
-        ax.set_xlabel("Energy (keV)")
-        ax.set_ylabel("Counts")
-        ax.set_yscale("sqrt")
-        ax.set_xlim(left=0, right=14)
-        ax.set_ylim(bottom=0, top=None)
-        ax.xaxis.set_major_locator(MultipleLocator(1))
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig(src_dpath / f"{src_dpath.name}_spectra.pdf", dpi=300)
+            ax = plt.gca()
+            ax.set_title(src_dpath.name)
+            ax.set_xlabel("Energy (keV)")
+            ax.set_ylabel("Counts")
+            ax.set_yscale("sqrt")
+            ax.set_xlim(left=0, right=14)
+            ax.set_ylim(bottom=0, top=None)
+            ax.xaxis.set_major_locator(MultipleLocator(1))
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(spectra_fp, dpi=300)
 
         # %% Copy result
         if COPY_RESULT:
