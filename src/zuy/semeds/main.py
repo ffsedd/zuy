@@ -120,7 +120,7 @@ def main() -> None:
     )
 
     fpaths = src_dpath.rglob("*.msa")
-    src_dpaths = set([f.parent for f in fpaths])
+    src_dpaths = set(f.parent for f in fpaths)
 
     for src_dpath in src_dpaths:
 
