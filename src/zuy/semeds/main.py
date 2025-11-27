@@ -4,11 +4,11 @@ import shutil
 from pathlib import Path
 from typing import Dict, Optional, Set
 
-import natsort
-import pandas as pd
-from cycler import cycler
-from matplotlib import pyplot as plt
-from matplotlib.ticker import MultipleLocator
+import natsort  # type: ignore
+import pandas as pd  # type: ignore
+from cycler import cycler  # type: ignore
+from matplotlib import pyplot as plt  # type: ignore
+from matplotlib.ticker import MultipleLocator  # type: ignore
 
 from zuy.common.dftools import save_formatted_xlsx
 from zuy.common.logger import setup_logger
@@ -37,19 +37,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "src", type=Path, help="Directory with XLSX and spectra files", default="."
     )
-    parser.add_argument(
-        "--overwrite", action="store_true", help="Overwrite existing files"
-    )
-    parser.add_argument(
-        "--copy", action="store_true", help="Copy results to zakazka directories"
-    )
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing files")
+    parser.add_argument("--copy", action="store_true", help="Copy results to zakazka directories")
     return parser.parse_args()
 
 
 # --- XLSX pipeline ---
-def merge_and_clean_xlsx(
-    root: Path, outdir: Path, overwrite: bool = False
-) -> pd.DataFrame:
+def merge_and_clean_xlsx(root: Path, outdir: Path, overwrite: bool = False) -> pd.DataFrame:
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Merge
@@ -92,9 +86,7 @@ def save_sample_outputs(
             (outdir / f"{name}.tex").write_text(
                 re.sub(r" &", "\t&", df2.to_latex(float_format="%.1f"))
             )
-            df2.to_csv(
-                outdir / f"{name}.tsv", sep="\t", index=True, float_format="%.1f"
-            )
+            df2.to_csv(outdir / f"{name}.tsv", sep="\t", index=True, float_format="%.1f")
             plot_correlations_from_tsv(outdir / f"{name}.tsv")
         else:
             logger.info(f"Skipped sample {name} (exists, no overwrite)")
@@ -132,9 +124,7 @@ def plot_spectra_dir(dpath: Path, overwrite: bool = False) -> None:
 
 
 # --- Copy results ---
-def copy_to_zakazky(
-    fp: Path, zmap: Dict[int, Path], rename: Optional[str] = None
-) -> None:
+def copy_to_zakazky(fp: Path, zmap: Dict[int, Path], rename: Optional[str] = None) -> None:
     pattern = r"(\d{4})v\d+"
     if m := re.match(pattern, fp.stem) or re.match(pattern, fp.parent.stem):
         zak = int(m.group(1))
