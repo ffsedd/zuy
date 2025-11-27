@@ -26,8 +26,10 @@ def interactive_baseline_vs_code(s: Spectrum):
     (line,) = ax.plot(s.x, s_tidy.y, lw=1)
     ax.set_xlabel("Energy (keV)")
     ax.set_ylabel("Counts")
-    plt.yscale("sqrt")  # type: ignore
     plt.ylim(0, None)
+    plt.yscale("sqrt")  # type: ignore
+    # ax.set_yscale("function", functions=(np.sqrt, lambda v: v**2))
+
     ax.grid(True)
     ax.set_title(f"λ={lam0:.1e}, p={p0:.3f}, smooth={smooth0}")
 

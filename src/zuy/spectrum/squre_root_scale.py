@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Tuple
 
+import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.scale import ScaleBase, register_scale
-from matplotlib.transforms import Transform
-from matplotlib.axis import Axis
-from matplotlib.ticker import MaxNLocator, FuncFormatter
+from matplotlib.axis import Axis  # type: ignore
+from matplotlib.scale import ScaleBase, register_scale  # type: ignore
+from matplotlib.ticker import FuncFormatter, MaxNLocator  # type: ignore
+from matplotlib.transforms import Transform  # type: ignore
 
 
 class SqrtScale(ScaleBase):
@@ -35,7 +35,6 @@ class SqrtScale(ScaleBase):
 
 
 class _SqrtTransform(Transform):
-
     @property
     def output_dims(self) -> int:
         return 1
@@ -58,7 +57,6 @@ class _SqrtTransform(Transform):
 
 
 class _InvertedSqrtTransform(Transform):
-
     @property
     def output_dims(self) -> int:
         return 1
@@ -90,7 +88,6 @@ def register_sqrt_scale():
 
 
 if __name__ == "__main__":
-
     register_sqrt_scale()
 
     x = np.linspace(0, 1, 100)
@@ -98,7 +95,7 @@ if __name__ == "__main__":
 
     fig, ax = plt.subplots()
     ax.plot(x, y, label=r"$y = x^2$")
-    ax.set_yscale("sqrt")
+    ax.set_yscale("sqrt")  # type: ignore
     ax.legend()
     ax.grid(True)
     ax.set_title("Square Root Y-Scale")
