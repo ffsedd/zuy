@@ -22,7 +22,7 @@ from zuy.semeds.clean_df import clean_df
 from zuy.semeds.convert_spectra import convert_gli_txt_spectra_to_msa
 from zuy.semeds.df_split import df_split
 from zuy.semeds.merge_xlsx import merge_xlsx
-from zuy.semeds.models import ZakazkaSample
+from zuy.semeds.models import Sample
 from zuy.semeds.plot_element_correlations import plot_correlations_from_tsv
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.plotting import plot_spectrum
@@ -96,12 +96,12 @@ def main() -> None:
         logger.info(f"...saved: {weight_clean_path} (shape={df_clean.shape})")
 
     # %% Split cleaned DataFrame into samples  --------------------------------------------------
-    samples: Dict[ZakazkaSample, pd.DataFrame] = df_split(df_clean)
+    samples: Dict[Sample, pd.DataFrame] = df_split(df_clean)
     logger.info(f"...split into {len(samples)} samples: {samples.keys()}")
 
     # %% Save outputs  --------------------------------------------------
     def save_output(
-        samples: dict[ZakazkaSample, pd.DataFrame],
+        samples: dict[Sample, pd.DataFrame],
         outdir: Path,
         overwrite: bool = False,
     ) -> None:
@@ -110,8 +110,8 @@ def main() -> None:
         """
         outdir.mkdir(exist_ok=True, parents=True)
 
-        for (zakazka, sample), df in samples.items():
-            zak_sample = f"{zakazka}v{sample}"
+        for sample, df in samples.items():
+            zak_sample = f"{sample.zakazka}v{sample.sample_no}"
             # print(zak_sample)
             logger.info(f"Saving outputs for sample: {zak_sample}")
 
