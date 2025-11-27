@@ -31,6 +31,9 @@ from zuy.spectrum.squre_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
 
+propcy = cycler("linestyle", ["-", "--", ":", "-."]) * plt.rcParams["axes.prop_cycle"]
+plt.rc("axes", prop_cycle=(propcy))
+
 logger = setup_logger(__name__)
 
 
@@ -82,13 +85,12 @@ def main() -> None:
         logger.info(f"...saved: {weight_merged_path} (shape={weight_df.shape})")
 
     # %% Clean and normalize merged DataFrame --------------------------------------------------
-    logger.info("Clean and normalize merged DataFrame...")
-
     weight_clean_path = outdir / "weight_clean.xlsx"
     if weight_clean_path.exists() and not args.overwrite:
         df_clean = pd.read_excel(weight_clean_path, index_col=(0, 1, 2), header=0)
         logger.info(f"DataFrame loaded: {weight_clean_path} (shape={df_clean.shape})")
     else:
+        logger.info("Clean and normalize merged DataFrame...")
         df_clean = clean_df(weight_df)
         df_clean.to_excel(weight_clean_path)
         logger.info(f"...saved: {weight_clean_path} (shape={df_clean.shape})")
@@ -178,14 +180,6 @@ def main() -> None:
             plt.grid(True)
             plt.tight_layout()
             plt.savefig(spectra_fp, dpi=300)
-
-    plt.rc(
-        "axes",
-        prop_cycle=(
-            cycler("linestyle", ["-", "--", ":", "-."])
-            * plt.rcParams["axes.prop_cycle"]
-        ),
-    )
 
     fpaths = src_dpath.rglob("*.msa")
     src_dpaths = set(f.parent for f in fpaths)
