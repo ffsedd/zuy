@@ -1,12 +1,15 @@
 # zuy/spectrum/cli.py
 from pathlib import Path
-import natsort
-import matplotlib.pyplot as plt
-from .processing import smooth, baseline_correction
-from .plotting import plot_multiple_spectra
-from .io import parse_msa_file
+
+import matplotlib.pyplot as plt  # type: ignore
+import natsort  # type: ignore
+from cycler import cycler  # type: ignore
+
 from zuy.common.logger import setup_logger
 
+from .io import parse_msa_file
+from .plotting import plot_multiple_spectra
+from .processing import baseline_correction, smooth
 from .squre_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
@@ -28,8 +31,7 @@ def main(data_dir: str | Path):
 
     plt.rc(
         "axes",
-        prop_cycle=plt.cycler("linestyle", ["-", "--", ":", "-."])
-        * plt.rcParams["axes.prop_cycle"],
+        prop_cycle=cycler("linestyle", ["-", "--", ":", "-."]) * plt.rcParams["axes.prop_cycle"],
     )
     plot_multiple_spectra(spectra)
     ax = plt.gca()

@@ -21,10 +21,11 @@ from zuy.semeds.models import Sample
 from zuy.semeds.plot_element_correlations import plot_correlations_from_tsv
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.plotting import plot_spectrum
-from zuy.spectrum.processing import baseline_correction, smooth
+from zuy.spectrum.processing import tidy_spectrum
 from zuy.spectrum.squre_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
+
 logger = setup_logger(__name__)
 
 # Matplotlib style
@@ -93,7 +94,8 @@ def save_sample_outputs(
 
 
 # --- Spectra plotting ---
-def plot_spectra_dir(dpath: Path, overwrite: bool = False) -> None:
+def plot_spectra_dir(dpath: Path, overwrite: bool = False, smooth_window: int = 5) -> None:
+    """Load, tidy (smooth + baseline), and plot all .msa spectra in a directory."""
     msa_files = natsort.natsorted(dpath.glob("*.msa"), key=str)
     if not msa_files:
         return
@@ -103,23 +105,23 @@ def plot_spectra_dir(dpath: Path, overwrite: bool = False) -> None:
         logger.info(f"Skipped existing plot: {out_pdf.name}")
         return
 
-    plt.figure(figsize=(10, 4.9))
+    fig, ax = plt.subplots(figsize=(10, 4.9))
     for f in msa_files:
         s = parse_msa_file(f)
-        s.y = smooth(s.y, 5)
-        s.y = baseline_correction(s.y, 15)
-        plot_spectrum(s, mph_perc=0.1, mpd=2, thl_perc=0.03)
+        s_tidy = tidy_spectrum(s, smooth_window=smooth_window)
+        plot_spectrum(s_tidy, ax=ax, mph_perc=0.1, mpd=2, thl_perc=0.03)
 
-    ax = plt.gca()
     ax.set_title(dpath.name)
     ax.set_xlabel("Energy (keV)")
     ax.set_ylabel("Counts")
-    ax.set_yscale("sqrt")
+    ax.set_yscale("sqrt")  # type: ignore
     ax.set_xlim(0, 14)
+    ax.set_ylim(bottom=0)
     ax.xaxis.set_major_locator(MultipleLocator(1))
-    plt.grid(True)
+    ax.grid(True)
     plt.tight_layout()
     plt.savefig(out_pdf, dpi=300)
+    plt.close(fig)
     logger.info(f"Saved spectra plot: {out_pdf}")
 
 

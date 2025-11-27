@@ -2,10 +2,13 @@
 """Detect peaks in data based on their amplitude and other features."""
 
 from __future__ import division, print_function
+
 from typing import Optional
+
+import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
+from matplotlib.axes import Axes  # type: ignore
 from numpy.typing import ArrayLike, NDArray
-from matplotlib.axes import Axes
 
 __author__ = "Marcos Duarte, https://github.com/demotu/BMC"
 __version__ = "1.0.4"
@@ -136,8 +139,6 @@ def _plot_detect_peaks(
     ax: Optional[Axes] = None,
 ) -> None:
     """Plot the detected peaks and the data."""
-
-    import matplotlib.pyplot as plt
 
     if ax is None:
         _, ax = plt.subplots(figsize=(8, 4))

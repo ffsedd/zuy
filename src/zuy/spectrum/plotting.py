@@ -1,7 +1,8 @@
 # zuy/spectrum/plotting.py
-from matplotlib import pyplot as plt
-from .models import Spectrum
+from matplotlib import pyplot as plt  # type: ignore
+
 from .detect_peaks import detect_peaks
+from .models import Spectrum
 
 
 def plot_spectrum(

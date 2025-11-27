@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import numpy as np
-from numpy import ndarray
 import scipy as sp  # type: ignore
+from numpy import ndarray
 
 
 def baseline_subtract_classic(
@@ -114,9 +114,7 @@ def baseline_subtract_arpls_cholesky(
         W = sp.sparse.diags(w, 0, shape=(N, N))
         WH = sp.linalg.csc_matrix(W + H)
         C = sp.linalg.cholesky(WH.todense())
-        z: ndarray = np.array(
-            sp.sparse.linalg.spsolve(C, sp.sparse.linalg.spsolve(C.T, w * y))
-        )
+        z: ndarray = np.array(sp.sparse.linalg.spsolve(C, sp.sparse.linalg.spsolve(C.T, w * y)))
         d = y - z
         dn = d[d < 0]
         m, s = np.mean(dn), np.std(dn)
