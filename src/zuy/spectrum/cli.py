@@ -17,7 +17,7 @@ register_sqrt_scale()
 logger = setup_logger(__name__)
 
 
-def main(data_dir: str | Path):
+def main(data_dir: str | Path = ".") -> None:
     data_dir = Path(data_dir)
     fpaths = natsort.natsorted(data_dir.rglob("*.msa"), key=str)
     spectra = [parse_msa_file(f) for f in fpaths]
