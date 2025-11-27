@@ -20,9 +20,9 @@ def baseline_subtract_classic(
     w = np.ones(L)
 
     for _ in range(niter):
-        W = sp.sparse.spdiags(w, 0, L, L)
+        W = sp.sparse.spdiags(w, 0, L, L)  # type: ignore
         Z = W + lam * D @ D.T
-        z: ndarray = np.array(sp.sparse.linalg.spsolve(Z, w * y))
+        z: ndarray = np.array(sp.sparse.linalg.spsolve(Z, w * y))  # type: ignore
         w = p * (y > z) + (1 - p) * (y < z)
 
     corr = y - z  # type: ignore
@@ -75,14 +75,14 @@ def baseline_subtract_arpls(
 
     L: int = len(y)
     diag = np.ones(L - 2)
-    D = sp.sparse.spdiags([diag, -2 * diag, diag], [0, -1, -2], L, L - 2)
+    D = sp.sparse.spdiags([diag, -2 * diag, diag], [0, -1, -2], L, L - 2)  # type: ignore
     H = lam * D @ D.T
 
     w = np.ones(L)
-    W = sp.sparse.spdiags(w, 0, L, L)
+    W = sp.sparse.spdiags(w, 0, L, L)  # type: ignore
 
     for _ in range(niter):
-        z: ndarray = np.array(sp.sparse.linalg.spsolve(W + H, W @ y))
+        z: ndarray = np.array(sp.sparse.linalg.spsolve(W + H, W @ y))  # type: ignore
         d = y - z
         dn = d[d < 0]
         m, s = np.mean(dn), np.std(dn)
@@ -105,16 +105,16 @@ def baseline_subtract_arpls_cholesky(
     """arPLS with Cholesky solver (as in Baek et al. 2015)."""
 
     N: int = len(y)
-    D = sp.sparse.eye(N, format="csc")
+    D = sp.sparse.eye(N, format="csc")  # type: ignore
     D = D[1:] - D[:-1]  # type: ignore
     H = lam * D.T @ D
 
     w = np.ones(N)
     for _ in range(itermax):
-        W = sp.sparse.diags(w, 0, shape=(N, N))
-        WH = sp.linalg.csc_matrix(W + H)
-        C = sp.linalg.cholesky(WH.todense())
-        z: ndarray = np.array(sp.sparse.linalg.spsolve(C, sp.sparse.linalg.spsolve(C.T, w * y)))
+        W = sp.sparse.diags(w, 0, shape=(N, N))  # type: ignore
+        WH = sp.linalg.csc_matrix(W + H)  # type: ignore
+        C = sp.linalg.cholesky(WH.todense())  # type: ignore
+        z: ndarray = np.array(sp.sparse.linalg.spsolve(C, sp.sparse.linalg.spsolve(C.T, w * y)))  # type: ignore
         d = y - z
         dn = d[d < 0]
         m, s = np.mean(dn), np.std(dn)
