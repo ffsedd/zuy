@@ -40,3 +40,7 @@ dev = [
 
 
 ]
+[tool.ruff]
+line-length = 99
+# select = ["I"]  # Only import-related rules if you want
+fix = true      # Enable auto-fixing

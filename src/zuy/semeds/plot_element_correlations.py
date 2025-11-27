@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """ """
 
-import matplotlib.pyplot as plt
-import pandas as pd
+import matplotlib.pyplot as plt  # type: ignore
+import pandas as pd  # type: ignore
 
 # from IPython.core.display import display, HTML
 from pathlib import Path
