@@ -5,7 +5,7 @@ from zuy.common.logger import setup_logger
 logger = setup_logger(__name__)
 
 
-def convert_spectra_txt_to_msa(base_path: Path) -> None:
+def convert_gli_txt_spectra_to_msa(base_path: Path) -> None:
     """
     Convert all spectra .txt files starting with digits in base_path (recursive)
     to .msa files by substituting ': EDS' with ': EDS_SEM'.

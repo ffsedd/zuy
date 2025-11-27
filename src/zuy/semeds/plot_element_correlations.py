@@ -57,7 +57,7 @@ IGNORE_PAIRS = [
 ]
 
 
-def df2corrs(df, rmin=0):
+def df2corrs(df, rmin=0) -> pd.DataFrame:
 
     dataCorr = df.corr(method="pearson")
     dataCorr = dataCorr.stack().reset_index()
@@ -76,7 +76,7 @@ def df2corrs(df, rmin=0):
     return dataCorr
 
 
-def plot_corr(df, rmin=0.5, rmax=1):
+def plot_corr(df, rmin=0.5, rmax=1) -> None:
     # ~ print(df.Hg[~df.Hg.isna()])
     # get correlations
     tc = df2corrs(df)
@@ -108,7 +108,7 @@ def plot_corr(df, rmin=0.5, rmax=1):
     fig.tight_layout()
 
 
-def plot_correlations_from_tsv(fpath):
+def plot_correlations_from_tsv(fpath) -> None:
 
     df = pd.read_csv(fpath, sep="\t")
     drop_cols = (
@@ -129,7 +129,7 @@ def plot_correlations_from_tsv(fpath):
     plt.savefig(fpath_out)
 
 
-def main():
+def main() -> None:
 
     fp = Path("/home/m/dev/zuy/src/zuy/data/2543v3.tsv")
 

@@ -19,7 +19,7 @@ from zuy.common.dftools import save_formatted_xlsx
 from zuy.common.logger import setup_logger
 from zuy.common.zlib import find_zakazky_dir, zak_dict
 from zuy.semeds.clean_df import clean_df
-from zuy.semeds.convert_spectra import convert_spectra_txt_to_msa
+from zuy.semeds.convert_spectra import convert_gli_txt_spectra_to_msa
 from zuy.semeds.df_split import df_split
 from zuy.semeds.merge_xlsx import merge_xlsx
 from zuy.semeds.models import ZakazkaSample
@@ -150,7 +150,7 @@ def main() -> None:
 
     # %% Convert spectra files  --------------------------------------------------
     logger.info("Convert spectra files (.txt → .msa)...")
-    convert_spectra_txt_to_msa(src_dpath)
+    convert_gli_txt_spectra_to_msa(src_dpath)
 
     # %% Plot spectra --------------------------------------------------
 
