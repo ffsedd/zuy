@@ -9,7 +9,7 @@ from zuy.common.logger import setup_logger
 
 from .io import parse_msa_file
 from .plotting import plot_multiple_spectra
-from .processing import baseline_correction, smooth
+from .processing import tidy_spectrum
 from .squre_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
@@ -25,9 +25,7 @@ def main(data_dir: str | Path):
     for f in fpaths:
         s = parse_msa_file(f)
         logger.info(f"Processing {f.name} with metadata {s.metadata}")
-        s.y = smooth(s.y, 5)
-        s.y = baseline_correction(s.y, niter=10, lam=2e7, p=0.05)
-        spectra.append(s)
+        spectra.append(tidy_spectrum(s, smooth_window=5))
 
     plt.rc(
         "axes",
