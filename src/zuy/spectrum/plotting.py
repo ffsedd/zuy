@@ -10,7 +10,7 @@ def plot_spectrum(
     ax: plt.Axes | None = None,
     mph_perc: float = 1,
     mpd: int = 5,
-    thl_perc: float = 0.05,
+    thl_perc: float = 0.001,
 ) -> None:
     """
     Plot a single spectrum and annotate peaks.
