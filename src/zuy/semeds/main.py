@@ -85,7 +85,7 @@ def save_sample_outputs(
                 columns=["source_file", "Site", "Project"]
             )
             (outdir / f"{name}.tex").write_text(
-                re.sub(r" &", "\t&", df2.to_latex(float_format="%.1f"))
+                re.sub(r" &", "\t&", df2.fillna("").to_latex(float_format="%.1f"))
             )
             df2.to_csv(outdir / f"{name}.tsv", sep="\t", index=True, float_format="%.1f")
             plot_correlations_from_tsv(outdir / f"{name}.tsv")
