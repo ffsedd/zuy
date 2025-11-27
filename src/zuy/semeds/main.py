@@ -56,10 +56,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     src_dpath: Path = args.src.resolve()
-    # trg_dpath: Path | None = args.trg.resolve() if args.trg is not None else None
-
-    # if trg_dpath is not None:
-    # logger.info(f"Target directory: {trg_dpath}")
     zak_dir = find_zakazky_dir()
     zmap = zak_dict(zak_dir)
 
@@ -129,8 +125,6 @@ def main() -> None:
                 df2 = df.droplevel(["Zakazka", "Sample"]).drop(
                     columns=["source_file", "Site", "Project"]
                 )
-
-                # drop unneeded index levels
                 # 2. Save .tex
                 fp_tex = outdir / f"{zak_sample}.tex"
 
@@ -200,7 +194,7 @@ def main() -> None:
         plot_dir(src_dpath)
         logger.info(f"...saved spectra plot for {src_dpath.name}")
 
-    # %% Copy result --------------------------------------------------
+    # %% Copy result to Zakazky --------------------------------------------------
     if args.copy:
         logger.info("Copying results to zakazka directories...")
         for src_dpath in src_dpaths:
