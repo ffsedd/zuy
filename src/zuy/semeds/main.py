@@ -13,11 +13,11 @@ from matplotlib.ticker import MultipleLocator  # type: ignore
 from zuy.common.dftools import save_formatted_xlsx
 from zuy.common.logger import setup_logger
 from zuy.common.zlib import find_zakazky_dir, zak_dict
-from zuy.semeds.clean_df import clean_df
-from zuy.semeds.convert_spectra import convert_gli_txt_spectra_to_msa
-from zuy.semeds.df_split import df_split
-from zuy.semeds.merge_xlsx import merge_xlsx
 from zuy.semeds.models import Sample
+from zuy.semeds.pipelines.clean_df import clean_df
+from zuy.semeds.pipelines.convert_spectra import convert_gli_txt_spectra_to_msa
+from zuy.semeds.pipelines.df_split import df_split
+from zuy.semeds.pipelines.merge_xlsx import merge_xlsx
 from zuy.semeds.plot_element_correlations import plot_correlations_from_tsv
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.plotting import plot_spectrum

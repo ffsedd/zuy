@@ -1,6 +1,8 @@
 from typing import Dict
+
 import pandas as pd  # type: ignore
-from .models import Sample
+
+from zuy.semeds.models import Sample
 
 
 def split_samples(
@@ -19,9 +21,7 @@ def split_samples(
     if not isinstance(df.index, pd.MultiIndex):
         raise ValueError("DataFrame must have a MultiIndex ['Zakazka', 'Sample']")
     if df.index.names != ["Zakazka", "Sample"]:
-        raise ValueError(
-            f"Expected MultiIndex names ['Zakazka', 'Sample'], got {df.index.names}"
-        )
+        raise ValueError(f"Expected MultiIndex names ['Zakazka', 'Sample'], got {df.index.names}")
 
     split_dfs: Dict[Sample, pd.DataFrame] = {}
     # groupby returns tuples matching the levels

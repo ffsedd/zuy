@@ -1,7 +1,7 @@
 [project]
 name = "zuy"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.1.1"
+description = "Process and export SEM-EDS data."
 readme = "README.md"
 authors = [
     { name = "ffsedd", email = "ffsedd@gmail.com" }
@@ -22,10 +22,8 @@ dependencies = [
 ]
 
 [project.scripts]
-sempy = "zuy.semeds.main:main"
-semmerge = "zuy.semeds.merge_xlsx:main"
-
-spectrum = "zuy.spectrum.cli:main"
+zuy-spectrum = "zuy.cli.spectrum_cli:main"
+zuy-semeds = "zuy.cli.semeds_cli:main"
 
 
 [build-system]

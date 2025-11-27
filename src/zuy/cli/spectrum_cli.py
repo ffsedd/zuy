@@ -6,11 +6,10 @@ import natsort  # type: ignore
 from cycler import cycler  # type: ignore
 
 from zuy.common.logger import setup_logger
-
-from .io import parse_msa_file
-from .plotting import plot_multiple_spectra
-from .processing import tidy_spectrum
-from .squre_root_scale import register_sqrt_scale
+from zuy.spectrum.io import parse_msa_file
+from zuy.spectrum.plotting import plot_multiple_spectra
+from zuy.spectrum.processing import tidy_spectrum
+from zuy.spectrum.squre_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
 

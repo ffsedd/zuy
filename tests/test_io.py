@@ -1,7 +1,9 @@
 # tests/test_io.py
-import pytest
 from pathlib import Path
+
 import numpy as np
+import pytest
+
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.models import Spectrum
 

@@ -5,82 +5,75 @@ from typing import Tuple
 
 import numpy as np
 
-from .models import Spectrum
+from zuy.spectrum.models import Spectrum
 
 
 def parse_msa_file(fpath: Path) -> Spectrum:
     """
-    Parse a text-based MSA file into a Spectrum.
+    Parse a text-based MSA file into a `Spectrum`.
 
-    Expected structure:
-        * Header metadata: lines beginning with one or more '#'
-          Format optionally `#KEY: VALUE` (case-normalized key preservation).
-        * A line starting with '#SPECTRUM' begins numeric XY data.
-        * Data lines: 'x, y' float pairs.
+    Format:
+        #KEY: VALUE       (optional metadata)
+        #SPECTRUM         (marks start of XY numeric block)
+        x, y              float pairs
 
-    Parameters
-    ----------
-    fpath : Path
-        File path to `.msa` file.
-
-    Returns
-    -------
-    Spectrum
-        Parsed spectrum object.
-
-    Raises
-    ------
-    ValueError
-        On malformed numeric lines or missing spectrum data.
+    Ignores any non-comment text before #SPECTRUM.
     """
-
-    metadata: dict[str, str] = {}
-    xs: list[float] = []
-    ys: list[float] = []
+    meta: dict[str, str | float] = {}
+    rows: list[str] = []
     in_data = False
 
     with fpath.open("r", encoding="utf-8") as fh:
-        for raw in fh:
-            line = raw.strip()
-            if not line:
+        for line in fh:
+            s = line.strip()
+            if not s:
                 continue
 
-            if line.startswith("#"):
-                upper = line.upper()
-                if upper.startswith("#SPECTRUM"):
+            if s.startswith("#"):
+                name = s.upper()
+                if name.startswith("#SPECTRUM"):
                     in_data = True
                     continue
-                _parse_metadata_line(line, metadata)
+                _parse_meta(s, meta)
                 continue
 
-            if not in_data:
-                # non-comment before SPECTRUM marker -> ignore silently
-                continue
+            if in_data:
+                rows.append(s)
 
-            try:
-                xi, yi = _parse_xy(line)
-            except Exception as e:
-                raise ValueError(f"Invalid numeric XY pair in {fpath}: {line}") from e
+    if not rows:
+        raise ValueError(f"{fpath}: no spectrum data found (#SPECTRUM missing or empty)")
 
-            xs.append(xi)
-            ys.append(yi)
-
-    if not xs:
-        raise ValueError(f"No numeric spectrum data found in {fpath}")
-
-    return Spectrum(x=np.array(xs), y=np.array(ys), metadata=metadata)
+    data = _parse_xy_block(rows, fpath)
+    return Spectrum(x=data[:, 0], y=data[:, 1], metadata=meta)
 
 
-def _parse_metadata_line(line: str, meta: dict[str, str]) -> None:
-    """Parse and store metadata if it contains a key/value."""
-    stripped = line.lstrip("#").strip()
-    if ":" not in stripped:
+def _parse_meta(line: str, meta: dict[str, str | float]) -> None:
+    t = line.lstrip("#").strip()
+    if ":" not in t:
         return
-    key, val = stripped.split(":", maxsplit=1)
-    meta[key.strip().upper()] = val.strip()
+    k, v = (x.strip() for x in t.split(":", maxsplit=1))
+    meta[k.upper()] = _autotype(v)
+
+
+def _parse_xy_block(rows: list[str], fpath: Path) -> np.ndarray:
+    try:
+        arr = np.array([_parse_xy(r) for r in rows], dtype=float)
+    except ValueError as e:
+        raise ValueError(f"{fpath}: malformed numeric line -> {e}") from e
+
+    if arr.ndim != 2 or arr.shape[1] != 2:
+        raise ValueError(f"{fpath}: expected Nx2 numeric array, got shape {arr.shape}")
+
+    return arr
 
 
 def _parse_xy(line: str) -> Tuple[float, float]:
-    """Parse a single `x, y` pair from a line."""
-    xi, yi = line.split(",", maxsplit=1)
-    return float(xi), float(yi)
+    x, y = (s.strip() for s in line.split(",", maxsplit=1))
+    return float(x), float(y)
+
+
+def _autotype(v: str) -> str | float:
+    try:
+        return float(v)
+    except ValueError:
+        return v
