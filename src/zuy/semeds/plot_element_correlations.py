@@ -32,6 +32,7 @@ IGNORE_PAIRS = [
     ["Fe", "Na"],
     ["Fe", "O"],
     ["Fe", "Si"],
+    ["Fe", "Mg"],
     ["K", "Mg"],
     ["K", "Na"],
     ["K", "Si"],

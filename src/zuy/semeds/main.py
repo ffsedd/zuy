@@ -58,13 +58,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    src_dpath: Path = args.src.resolve()
+    root: Path = args.src.resolve()
     zak_dir = find_zakazky_dir()
     zmap = zak_dict(zak_dir)
 
-    outdir = src_dpath / "processed"
+    outdir = root / "processed"
     outdir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Starting processing in directory: {src_dpath}")
+    logger.info(f"Starting processing in directory: {root}")
 
     # %% Rename files   # TODO
     # 1111_1 -> 1111v1
@@ -76,7 +76,7 @@ def main() -> None:
         logger.info(f"DataFrame loaded: {weight_merged_path} (shape={weight_df.shape})")
     else:
         logger.info("Merge XLSX files into DataFrames by category...")
-        merged_df: Dict[str, pd.DataFrame] = merge_xlsx(src_dpath)
+        merged_df: Dict[str, pd.DataFrame] = merge_xlsx(root)
         if "weight" not in merged_df:
             raise ValueError("No 'weight' tables found. Exiting.")
         # Save raw merged weight DataFrame
@@ -146,17 +146,17 @@ def main() -> None:
 
     # %% Convert spectra files  --------------------------------------------------
     logger.info("Convert spectra files (.txt → .msa)...")
-    convert_gli_txt_spectra_to_msa(src_dpath)
+    convert_gli_txt_spectra_to_msa(root)
 
     # %% Plot spectra --------------------------------------------------
 
     def plot_dir(src_dpath: Path) -> None:
         fpaths = natsort.natsorted([f for f in src_dpath.glob("*.msa")], key=str)  # type: ignore
-        logger.info(f"Plotting spectra in directory: {src_dpath}")
+        logger.info(f"Plot: {src_dpath}")
         spectra_fp = src_dpath / f"{src_dpath.name}_spectra.pdf"
 
         if spectra_fp.exists() and not args.overwrite:
-            logger.info(f"Skipping existing file: {spectra_fp}")
+            logger.info(f"Skipped: {spectra_fp.name}")
             return
         else:
             plt.figure(figsize=(10, 4.9))
@@ -180,39 +180,54 @@ def main() -> None:
             plt.grid(True)
             plt.tight_layout()
             plt.savefig(spectra_fp, dpi=300)
+            logger.info(f"...saved spectra plot for {dpath.name}")
 
-    fpaths = src_dpath.rglob("*.msa")
-    src_dpaths = set(f.parent for f in fpaths)
+    fpaths = root.rglob("*.msa")
+    spectra_dirs = list(set(f.parent for f in fpaths))
 
-    for src_dpath in src_dpaths:
-        plot_dir(src_dpath)
-        logger.info(f"...saved spectra plot for {src_dpath.name}")
+    for dpath in spectra_dirs:
+        plot_dir(dpath)
+
+    def guess_zak_from_filename(fp: Path) -> int | None:
+        pattern = r"(\d{4})v\d+"
+        if m := re.match(pattern, fp.stem):
+            return int(m.group(1))
+        elif m := re.match(pattern, fp.parent.stem):
+            return int(m.group(1))
+        else:
+            return None
+
+    def copy_file(src: Path, trg_name: str | None = None) -> None:
+        zak = guess_zak_from_filename(src)
+        if zak not in zmap:
+            logger.warning(f"Zakazka not found: {src}")
+            return
+
+        trg_dpath = zmap[zak] / "pytex/sem"
+        trg_dpath.mkdir(parents=True, exist_ok=True)
+        trg_name = trg_name if trg_name else src.name
+        shutil.copy(src, trg_dpath / trg_name)
+        logger.info(f"copied: {src.name} -> {trg_dpath}")
 
     # %% Copy result to Zakazky --------------------------------------------------
-    if args.copy:
+    if not args.copy:
+        logger.info("Copy flag not set. Skipping copy to zakazka directories.")
+    else:
         logger.info("Copying results to zakazka directories...")
-        for src_dpath in src_dpaths:
-
-            zak = int(src_dpath.name[:4])
-            if zak not in zmap:
-                logger.warning(f"Zakazka {src_dpath.name[:4]} not found.")
-                continue
-
-            trg_dpath = zmap[zak] / "pytex/sem"
-            for fp in src_dpath.iterdir():
+        for dpath in [outdir] + spectra_dirs:
+            for fp in dpath.iterdir():
                 if fp.suffix in (
+                    ".xls",
+                    ".tex",
+                    ".tsv",
+                    ".xls",
                     ".pdf",
                     ".png",
-                    ".jpg",
-                    ".jpeg",
-                    ".tex",
-                    ".xlsx",
-                    ".msa",
                 ):
-                    shutil.copy(fp, trg_dpath)
-                    logger.info(f"copied: {fp.name}")
-                # else:
-                #     logger.warning(f"Unknown file type: {fp}")
+                    copy_file(fp)
+
+                elif fp.suffix in (".msa"):
+                    copy_file(fp, trg_name=f"{dpath.name}_{fp.name}")
 
 
 if __name__ == "__main__":
