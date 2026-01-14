@@ -1,10 +1,49 @@
 # Python-generated files
 __pycache__/
+<<<<<<< HEAD
 *.py[oc]
+=======
+*.py[co]
+*.pyo
+*.pyd
+
+# Distribution / packaging
+>>>>>>> 9a9d1ef (spectrumcli)
 build/
 dist/
 wheels/
 *.egg-info
+<<<<<<< HEAD
 
 # Virtual environments
 .venv
+=======
+*.egg
+*.manifest
+*.spec
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# VSCode / IDE settings
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+>>>>>>> 9a9d1ef (spectrumcli)
