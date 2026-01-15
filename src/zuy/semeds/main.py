@@ -1,8 +1,7 @@
 import argparse
 import re
-import shutil
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Dict, Set
 
 import natsort  # type: ignore
 import pandas as pd  # type: ignore
@@ -21,6 +20,12 @@ from zuy.semeds.pipelines.convert_spectra import convert_gli_txt_spectra_to_msa
 from zuy.semeds.pipelines.df_split import df_split
 from zuy.semeds.pipelines.merge_xlsx import merge_xlsx
 from zuy.semeds.plot_element_correlations import plot_correlations_from_tsv
+from zuy.semeds.pipelines.copy_result import copy_to_zakazky
+from zuy.common.xlsxtools import (
+    # freeze_header_and_first_col,
+    # set_column_widths_mm,
+    write_xlsx_formatted,
+)
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.plotting import plot_spectrum
 from zuy.spectrum.processing import tidy_spectrum
@@ -57,7 +62,21 @@ def merge_and_clean_xlsx(root: Path, outdir: Path, overwrite: bool = False) -> p
     else:
         merged = merge_xlsx(root)
         df = merged["weight"]
-        df.to_excel(merged_path, index=False)
+        # df.to_excel(merged_path, index=False)
+        # set_column_widths_mm(
+        #     merged_path,
+        #     default_mm=10.0,
+        #     special={1: 30.0},
+        # )
+        # freeze_header_and_first_col(merged_path)
+        write_xlsx_formatted(
+            df,
+            merged_path,
+            index=False,
+            col_widths_mm=9.0,
+            special_widths_mm={2: 30.0},
+            freeze=(1, 3),
+        )
         logger.info(f"Merged XLSX saved: {merged_path} ({df.shape})")
 
     # Clean
@@ -67,7 +86,20 @@ def merge_and_clean_xlsx(root: Path, outdir: Path, overwrite: bool = False) -> p
         logger.info(f"Loaded cleaned XLSX: {clean_path} ({df_clean.shape})")
     else:
         df_clean = clean_df(df)
-        df_clean.to_excel(clean_path)
+        # df_clean.to_excel(clean_path)
+        # set_column_widths_mm(
+        #     merged_path,
+        #     default_mm=10.0,
+        #     special={3: 15.0},
+        # )
+        # freeze_header_and_first_col(clean_path)
+        write_xlsx_formatted(
+            df_clean,
+            clean_path,
+            index=True,
+            col_widths_mm=9.0,
+            freeze=(1, 3),
+        )
         logger.info(f"Cleaned XLSX saved: {clean_path} ({df_clean.shape})")
 
     return df_clean
@@ -127,25 +159,6 @@ def plot_spectra_dir(dpath: Path, overwrite: bool = False, smooth_window: int = 
     logger.info(f"Saved spectra plot: {out_pdf}")
 
 
-# --- Copy results ---
-def copy_to_zakazky(fp: Path, zmap: Dict[int, Path], rename: Optional[str] = None) -> None:
-    pattern = r"(\d{4})v\d+"
-    if m := re.match(pattern, fp.stem) or re.match(pattern, fp.parent.stem):
-        zak = int(m.group(1))
-    else:
-        logger.warning(f"Cannot guess zakazka from {fp}")
-        return
-
-    if zak not in zmap:
-        logger.warning(f"Zakazka {zak} not found in mapping.")
-        return
-
-    trg_dir = zmap[zak] / "pytex/sem"
-    trg_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(fp, trg_dir / (rename or fp.name))
-    logger.info(f"Copied {fp.name} -> {trg_dir}")
-
-
 # --- Main pipeline ---
 def main() -> None:
     args = parse_args()
@@ -153,10 +166,9 @@ def main() -> None:
     outdir = root / "processed"
     zak_dir = find_zakazky_dir()
     zmap = zak_dict(zak_dir)
-    
-    rename_files_and_dirs(root)
-    convert_tiff_to_jpg(root, overwrite=False)
 
+    rename_files_and_dirs(root)
+    convert_tiff_to_jpg(root, outdir, overwrite=False)
 
     df_clean = merge_and_clean_xlsx(root, outdir, args.overwrite)
     samples = df_split(df_clean)
@@ -171,6 +183,7 @@ def main() -> None:
 
     if args.copy:
         logger.info("Copying results to zakazka directories...")
+
         for d in [outdir] + list(spectra_dirs):
             for fp in d.iterdir():
                 if fp.suffix.lower() in {".xls", ".tex", ".tsv", ".pdf", ".png", ".jpg"}:

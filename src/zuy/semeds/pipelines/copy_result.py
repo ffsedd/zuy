@@ -1,49 +1,29 @@
 import shutil
 from pathlib import Path
+from typing import Dict, Optional
+from zuy.common.logger import setup_logger
+import re
+
+logger = setup_logger(__name__)
 
 
-def copy_plotted_spectra(src_path: Path, target_path: Path) -> None:
-    for f in src_path.rglob("*spectra.*"):
-        dest = target_path / f.name
-        print(f"[INFO] {f} -> {dest}")
-        shutil.copy(f, dest)
+def copy_to_zakazky(fp: Path, zmap: Dict[int, Path], rename: Optional[str] = None) -> None:
+    pattern = r"(\d{4})v\d+"
+    if m := re.match(pattern, fp.stem) or re.match(pattern, fp.parent.stem):
+        zak = int(m.group(1))
+    else:
+        logger.warning(f"Cannot guess zakazka from {fp}")
+        return
 
+    if zak not in zmap:
+        logger.warning(f"Zakazka {zak} not found in mapping.")
+        return
 
-def copy_msa_files(src_dir: Path, target_dir: Path) -> None:
-    """Copy only .msa files from src_dir into target_dir."""
-    target_dir.mkdir(exist_ok=True, parents=True)
-
-    for f in src_dir.rglob("*.msa"):
-        dest_dir = target_dir / f.parent.name
-        dest_dir.mkdir(exist_ok=True, parents=True)
-        dest = dest_dir / f.name
-        print(f"{f} -> {dest}")
-        shutil.copy(f, dest)
-
-
-def copy_tex_files(src_dir: Path, target_dir: Path) -> None:
-    """Copy only .msa files from src_dir into target_dir."""
-    target_dir.mkdir(exist_ok=True, parents=True)
-
-    for f in src_dir.rglob("*.tex"):
-        dest_dir = target_dir / f.parent.name
-        dest_dir.mkdir(exist_ok=True, parents=True)
-        dest = dest_dir / f.name
-        print(f"{f} -> {dest}")
-        shutil.copy(f, dest)
-
-
-def copy_results(src_path: Path, target_path: Path) -> None:
-    """Copy spectra files from src_path to target_path."""
-    if not src_path.exists():
-        raise ValueError(f"Source path does not exist: {src_path}")
-    target_path.mkdir(exist_ok=True, parents=True)
-    copy_plotted_spectra(src_path, target_path)
-    copy_msa_files(src_path, target_path)
+    trg_dir = zmap[zak] / "pytex/sem"
+    trg_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(fp, trg_dir / (rename or fp.name))
+    logger.info(f"Copied {fp.name} -> {trg_dir}")
 
 
 if __name__ == "__main__":
-    copy_results(
-        Path("/home/m/Dropbox/ZUMI/zakazky/ZADANI-SEM/sem-25-08/"),
-        Path("/home/m/Dropbox/ZUMI/zakazky/2511_Szabová/pytex/sem"),
-    )
+    pass
