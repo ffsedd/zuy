@@ -1,12 +1,11 @@
 import re
 from pathlib import Path
-from typing import Pattern
 from zuy.common.logger import setup_logger
-import shutil
 
 logger = setup_logger(__name__)
 
 _PATTERN = re.compile(r"(\d{4})_(\d{1,2})")
+
 
 def rename_files_and_dirs(root: Path) -> None:
     """
