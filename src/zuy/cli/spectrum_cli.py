@@ -12,7 +12,7 @@ from zuy.common.logger import setup_logger
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.plotting import plot_multiple_spectra
 from zuy.spectrum.processing import tidy_spectrum
-from zuy.spectrum.squre_root_scale import register_sqrt_scale
+from zuy.spectrum.square_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
 logger = setup_logger(__name__)

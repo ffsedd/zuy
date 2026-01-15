@@ -83,7 +83,7 @@ def _sqrt_formatter(val: float, _: int) -> str:
     return f"{np.sqrt(val):.1f}" if val >= 0 else ""
 
 
-def register_sqrt_scale():
+def register_sqrt_scale() -> None:
     register_scale(SqrtScale)
 
 

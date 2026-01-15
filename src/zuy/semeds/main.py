@@ -14,6 +14,8 @@ from zuy.common.dftools import save_formatted_xlsx
 from zuy.common.logger import setup_logger
 from zuy.common.zlib import find_zakazky_dir, zak_dict
 from zuy.semeds.models import Sample
+from zuy.semeds.pipelines.rename_files_and_dirs import rename_files_and_dirs
+from zuy.semeds.pipelines.convert_images import convert_tiff_to_jpg
 from zuy.semeds.pipelines.clean_df import clean_df
 from zuy.semeds.pipelines.convert_spectra import convert_gli_txt_spectra_to_msa
 from zuy.semeds.pipelines.df_split import df_split
@@ -22,7 +24,7 @@ from zuy.semeds.plot_element_correlations import plot_correlations_from_tsv
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.plotting import plot_spectrum
 from zuy.spectrum.processing import tidy_spectrum
-from zuy.spectrum.squre_root_scale import register_sqrt_scale
+from zuy.spectrum.square_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
 
@@ -151,6 +153,10 @@ def main() -> None:
     outdir = root / "processed"
     zak_dir = find_zakazky_dir()
     zmap = zak_dict(zak_dir)
+    
+    rename_files_and_dirs(root)
+    convert_tiff_to_jpg(root, overwrite=False)
+
 
     df_clean = merge_and_clean_xlsx(root, outdir, args.overwrite)
     samples = df_split(df_clean)
@@ -167,7 +173,7 @@ def main() -> None:
         logger.info("Copying results to zakazka directories...")
         for d in [outdir] + list(spectra_dirs):
             for fp in d.iterdir():
-                if fp.suffix.lower() in {".xls", ".tex", ".tsv", ".pdf", ".png"}:
+                if fp.suffix.lower() in {".xls", ".tex", ".tsv", ".pdf", ".png", ".jpg"}:
                     copy_to_zakazky(fp, zmap)
                 elif fp.suffix.lower() == ".msa":
                     copy_to_zakazky(fp, zmap, rename=f"{d.name}_{fp.name}")

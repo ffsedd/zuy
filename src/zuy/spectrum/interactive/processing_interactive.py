@@ -7,7 +7,7 @@ from matplotlib.widgets import Slider  # type: ignore
 from zuy.spectrum.io import parse_msa_file
 from zuy.spectrum.models import Spectrum
 from zuy.spectrum.processing import tidy_spectrum
-from zuy.spectrum.squre_root_scale import register_sqrt_scale
+from zuy.spectrum.square_root_scale import register_sqrt_scale
 
 register_sqrt_scale()
 
