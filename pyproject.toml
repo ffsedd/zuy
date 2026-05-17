@@ -24,7 +24,7 @@ dependencies = [
 [project.scripts]
 spectrum = "zuy.cli.spectrum_cli:main"
 semeds = "zuy.semeds.main:main"
-semannotator = "zuy.imannotator.sem_imannotator:main"
+semannotator = "zuy.imannotator.semannotator:main"
 
 
 [build-system]
