@@ -14,9 +14,11 @@ dependencies = [
     "natsort>=8.4.0",
     "openpyxl>=3.1.5",
     "pandas>=2.3.1",
+    "pyaml>=26.2.1",
     "pybaselines>=1.2.1",
     "scikit-image>=0.25.2",
     "scipy>=1.15.3",
+    "tomli-w>=1.2.0",
     "tqdm>=4.67.1",
     "xlsxwriter>=3.2.5",
 ]
@@ -24,7 +26,8 @@ dependencies = [
 [project.scripts]
 spectrum = "zuy.cli.spectrum_cli:main"
 semeds = "zuy.semeds.main:main"
-semannotator = "zuy.imannotator.semannotator:main"
+semangui = "zuy.imannotator.gui:main"
+semandraw = "zuy.imannotator.draw:main"
 
 
 [build-system]
