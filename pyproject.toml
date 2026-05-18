@@ -29,6 +29,7 @@ spectrum = "zuy.cli.spectrum_cli:main"
 semeds = "zuy.semeds.main:main"
 semangui = "zuy.imannotator.gui:main"
 semandraw = "zuy.imannotator.draw:main"
+semvis = "zuy.imoverlay.semvis:main"
 
 
 [build-system]
