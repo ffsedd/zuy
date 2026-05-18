@@ -149,6 +149,60 @@ def mouse_sem(event, x, y, *_):
         drag_mode = None
 
 
+def auto_init_points(opt_full, sem_full, max_points=8):
+    """
+    Suggest initial correspondences using ORB + homography.
+    Returns OPT points and SEM points in DISPLAY coordinates.
+    """
+
+    orb = cv2.ORB_create(5000)  # type: ignore
+
+    opt_gray = cv2.cvtColor(opt_full, cv2.COLOR_BGR2GRAY)
+    sem_gray = cv2.cvtColor(sem_full, cv2.COLOR_BGR2GRAY)
+
+    kp1, des1 = orb.detectAndCompute(opt_gray, None)
+    kp2, des2 = orb.detectAndCompute(sem_gray, None)
+
+    if des1 is None or des2 is None:
+        print("Auto-init failed: no descriptors")
+        return [], []
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des2, des1)  # SEM → OPT
+
+    matches = sorted(matches, key=lambda x: x.distance)
+
+    if len(matches) < 8:
+        print("Not enough matches for auto-init")
+        return [], []
+
+    # take best matches but spatially diverse
+    pts_sem = []
+    pts_opt = []
+
+    used_opt = set()
+
+    for m in matches:
+        p_sem = kp2[m.queryIdx].pt
+        p_opt = kp1[m.trainIdx].pt
+
+        if len(pts_sem) >= max_points:
+            break
+
+        # avoid duplicates (simple spatial gating)
+        if any(np.hypot(p_opt[0] - u[0], p_opt[1] - u[1]) < 30 for u in used_opt):
+            continue
+
+        used_opt.add(p_opt)
+
+        pts_sem.append((int(p_sem[0]), int(p_sem[1])))
+        pts_opt.append((int(p_opt[0]), int(p_opt[1])))
+
+    print(f"[AUTO] initialized {len(pts_opt)} points")
+
+    return pts_opt, pts_sem
+
+
 # =====================================================
 # FINAL EXPORT
 # =====================================================
@@ -235,6 +289,16 @@ def semvis(sem_path: Path = SEM_PATH, opt_path: Path = OPT_PATH):
 
     opt_disp = resize(opt_full, OPT_DISPLAY_SCALE)
     sem_disp = sem_full.copy()
+
+    # =====================================================
+    # AUTO INITIALIZATION (NEW)
+    # =====================================================
+
+    init_opt, init_sem = auto_init_points(opt_full, sem_full)
+
+    # scale OPT points to display space
+    cp.opt = [(int(x * OPT_DISPLAY_SCALE), int(y * OPT_DISPLAY_SCALE)) for x, y in init_opt]
+    cp.sem = init_sem
 
     cv2.namedWindow("OPT")
     cv2.namedWindow("SEM")
