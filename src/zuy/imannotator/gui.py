@@ -37,7 +37,8 @@ class ImageEditor:
         self.i = 0
 
         self.store = AnnotationStore(log_path)
-        self.store.load_yaml()
+        if log_path.is_file():
+            self.store.load_yaml()
 
         self.tool = "circle"
         self.size = tk.IntVar(value=DEFAULT_SHAPE_SIZE)
