@@ -300,11 +300,11 @@ def semvis(sem_path: Path = SEM_PATH, opt_path: Path = OPT_PATH):
     cp.opt = [(int(x * OPT_DISPLAY_SCALE), int(y * OPT_DISPLAY_SCALE)) for x, y in init_opt]
     cp.sem = init_sem
 
-    cv2.namedWindow("OPT")
+    cv2.namedWindow("VIS")
     cv2.namedWindow("SEM")
     cv2.namedWindow("Overlay")
 
-    cv2.setMouseCallback("OPT", mouse_opt)
+    cv2.setMouseCallback("VIS", mouse_opt)
     cv2.setMouseCallback("SEM", mouse_sem)
 
     print("""
@@ -319,7 +319,7 @@ ESC         quit
 """)
 
     while True:
-        cv2.imshow("OPT", draw_pts(opt_disp, cp.opt))
+        cv2.imshow("VIS", draw_pts(opt_disp, cp.opt))
         cv2.imshow("SEM", draw_pts(sem_disp, cp.sem))
         cv2.imshow("Overlay", preview_overlay(opt_disp, sem_disp))
 
@@ -368,8 +368,8 @@ def main():
     OPT_DISPLAY_SCALE = args.scale
     ALPHA = args.alpha
 
-    opt_full = cv2.imread(str(args.opt))
-    sem_full = cv2.imread(str(args.sem))
+    opt_full = cv2.imread(str(args.vispath))
+    sem_full = cv2.imread(str(args.sempath))
 
     if opt_full is None or sem_full is None:
         raise RuntimeError("Image load failed")
