@@ -347,8 +347,8 @@ ESC         quit
 
 def parsearg():
     p = argparse.ArgumentParser(description="SEM ↔ Optical image registration tool")
-    p.add_argument("sem", type=Path, help="SEM image path")
-    p.add_argument("opt", type=Path, help="Optical image path")
+    p.add_argument("sempath", type=Path, help="SEM image path")
+    p.add_argument("vispath", type=Path, help="VIS image path")
 
     p.add_argument("--scale", type=float, default=OPT_DISPLAY_SCALE)
     p.add_argument("--alpha", type=float, default=ALPHA)
@@ -378,7 +378,7 @@ def main():
         # headless mode requires predefined points (future extension)
         raise NotImplementedError("Headless mode needs stored landmarks (add YAML support next).")
 
-    semvis(args.sem, args.opt)
+    semvis(args.sempath, args.vispath)
 
 
 if __name__ == "__main__":
