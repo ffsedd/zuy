@@ -15,14 +15,12 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     Assumes `Sample` may be integer-only (no embedded Zakazka).
     """
     # --- Parse Project Sample Site ---
+
     if "Project Path" in df.columns:
         df["Project Path"] = df["Project Path"].astype(str)
-        df[["Project", "Sample", "Site"]] = df["Project Path"].str.split(
-            "/", expand=True
-        )
+        df[["Project", "Sample", "Site"]] = df["Project Path"].str.split("/", expand=True)
     elif all(
-        col in df.columns
-        for col in ["Project Path (1)", "Project Path (2)", "Project Path (3)"]
+        col in df.columns for col in ["Project Path (1)", "Project Path (2)", "Project Path (3)"]
     ):
         df.rename(
             columns={
@@ -32,7 +30,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
             },
             inplace=True,
         )
-
+    print(df)
     # --- Sample name split  ---
     # If Sample is integer-only, skip splitting; otherwise keep original logic.
     if "Sample" in df.columns:
@@ -49,9 +47,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
                     split_char = ch
                     break
             if split_char:
-                df[["Zakazka", "Sample"]] = df["Sample"].str.split(
-                    split_char, expand=True
-                )
+                df[["Zakazka", "Sample"]] = df["Sample"].str.split(split_char, expand=True)
         else:
             # integer-only Sample; ensure we keep Sample and create a placeholder Zakazka if needed
             # If you have a separate column or logic for Zakazka, use that here.
@@ -64,9 +60,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
         df.rename(columns={"Total": "Sum"}, inplace=True)
 
     # --- Normalize label column ---
-    label_col = next(
-        (col for col in df.columns if col in ["Spectrum Label", "Label"]), None
-    )
+    label_col = next((col for col in df.columns if col in ["Spectrum Label", "Label"]), None)
     if label_col:
         df.rename(columns={label_col: "No"}, inplace=True)
         df["No"] = df["No"].astype(str).str.extract(r"(\d+)", expand=False)
@@ -90,9 +84,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     columns = df.columns.tolist()
     elements = [e for e in ELEMENT_SYMBOLS if e in columns]
     others = [
-        col
-        for col in columns
-        if col not in elements and col not in ["Zakazka", "Sample", "No"]
+        col for col in columns if col not in elements and col not in ["Zakazka", "Sample", "No"]
     ]
     ordered_columns = elements + others
 
@@ -101,9 +93,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
 
     # --- Final sort ---
     # Some rows may have NaN Zakazka if integer-only Sample; they will go last.
-    df = df.sort_values(["Zakazka", "Sample", "No"], na_position="last").reset_index(
-        drop=True
-    )
+    df = df.sort_values(["Zakazka", "Sample", "No"], na_position="last").reset_index(drop=True)
 
     # --- Create MultiIndex ---
     df.set_index(["Zakazka", "Sample", "No"], inplace=True)

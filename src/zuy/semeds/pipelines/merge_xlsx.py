@@ -1,8 +1,10 @@
+import re
 from pathlib import Path
+from typing import Pattern, Union
+
 import pandas as pd  # type: ignore
 from pandas import DataFrame  # type: ignore
-import re
-from typing import Pattern, Union
+
 from zuy.common.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -29,6 +31,8 @@ def split_on_header_row(
     for start, end in zip(row_indices, row_indices[1:]):
         header = df.iloc[start]
         data = df.iloc[start + 1 : end].copy()
+        data = data.dropna(how="all")
+        print(data)
         data.columns = header
 
         # add filename column
@@ -102,8 +106,7 @@ def merge_xlsx(dpath: Path) -> dict[str, DataFrame]:
             tables_by_category.setdefault(key, []).extend(group)
 
     merged = {
-        key: pd.concat(group, ignore_index=True)
-        for key, group in tables_by_category.items()
+        key: pd.concat(group, ignore_index=True) for key, group in tables_by_category.items()
     }
 
     for key, df in merged.items():
