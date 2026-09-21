@@ -1,80 +1,134 @@
+import argparse
 from pathlib import Path
+from typing import Callable, Iterator
 
 from PIL import Image, ImageDraw
 
 from .models import Shape
 from .storage import AnnotationStore
 
-# =========================================================
-# DRAWING CORE
-# =========================================================
+# =========================
+# CONFIG
+# =========================
+DEFAULT_SHAPE_SIZE = 80  # keep in sync with the editor (ideally move to models.py)
+DEFAULT_SUFFIX = "_x"
 
 
-def draw_shape(draw: ImageDraw.ImageDraw, s: Shape):
-    if s.type == "circle":
-        x, y = s.x, s.y
-        r = s.size or 10
-
-        # contrast stack: white base + red detail
-        draw.ellipse([x - r, y - r, x + r, y + r], outline="white", width=9)  # type: ignore
-        draw.ellipse([x - r + 3, y - r + 3, x + r - 3, y + r - 3], outline="red", width=3)  # type: ignore
-
-    elif s.type == "cross":
-        r = s.size
-        draw.line([s.x - r, s.y, s.x + r, s.y], fill="green", width=2)  # type: ignore
-        draw.line([s.x, s.y - r, s.x, s.y + r], fill="green", width=2)  # type: ignore
-
-    elif s.type == "rectangle":
-        if s.x2 is None or s.y2 is None:
-            return
-        draw.rectangle([s.x, s.y, s.x2, s.y2], outline="blue", width=2)
+# =========================
+# DRAWING
+# =========================
+def _radius(s: Shape) -> float:
+    return s.size or DEFAULT_SHAPE_SIZE
 
 
-# =========================================================
-# RENDER ENGINE
-# =========================================================
+def _draw_circle(draw: ImageDraw.ImageDraw, s: Shape) -> None:
+    r = _radius(s)
+    # contrast stack: white base + red detail
+    draw.ellipse([s.x - r, s.y - r, s.x + r, s.y + r], outline="white", width=9)
+    draw.ellipse(
+        [s.x - r + 3, s.y - r + 3, s.x + r - 3, s.y + r - 3], outline="red", width=3
+    )
 
 
-def render(path: Path, suffix="_x"):
-    store = AnnotationStore(path)
+def _draw_cross(draw: ImageDraw.ImageDraw, s: Shape) -> None:
+    r = _radius(s)
+    draw.line([s.x - r, s.y, s.x + r, s.y], fill="green", width=2)
+    draw.line([s.x, s.y - r, s.x, s.y + r], fill="green", width=2)
+
+
+def _draw_rectangle(draw: ImageDraw.ImageDraw, s: Shape) -> None:
+    if s.x2 is None or s.y2 is None:
+        return
+    draw.rectangle([s.x, s.y, s.x2, s.y2], outline="blue", width=2)
+
+
+DRAWERS: dict[str, Callable[[ImageDraw.ImageDraw, Shape], None]] = {
+    "circle": _draw_circle,
+    "cross": _draw_cross,
+    "rectangle": _draw_rectangle,
+}
+
+
+def draw_shape(draw: ImageDraw.ImageDraw, s: Shape) -> None:
+    fn = DRAWERS.get(s.type)
+    if fn is None:
+        print(f"[WARN] unknown shape type: {s.type!r}")
+        return
+    fn(draw, s)
+
+
+# =========================
+# PATHS
+# =========================
+def resolve_image(key: str, base: Path) -> Path | None:
+    """Keys are relative to the YAML file; legacy keys may be cwd-relative or absolute."""
+    candidates = [base / key, Path(key)]
+    return next((p for p in candidates if p.is_file()), None)
+
+
+def out_path_for(img_path: Path, suffix: str, out_dir: Path | None) -> Path:
+    name = f"{img_path.stem}{suffix}{img_path.suffix}"
+    return (out_dir or img_path.parent) / name
+
+
+# =========================
+# RENDER
+# =========================
+def render_image(img_path: Path, shapes: list[Shape], out_path: Path) -> None:
+    with Image.open(img_path) as im:
+        img = im.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    for s in shapes:
+        draw_shape(draw, s)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path)
+
+
+def iter_entries(store: AnnotationStore) -> Iterator[tuple[str, list[Shape]]]:
+    for key, entry in store.data.get("images", {}).items():
+        raw_shapes = (entry or {}).get("shapes") or []
+        yield key, [Shape.from_dict(s) for s in raw_shapes]
+
+
+def render(yaml_path: Path, suffix: str = DEFAULT_SUFFIX, out_dir: Path | None = None) -> int:
+    store = AnnotationStore(yaml_path)
     store.load_yaml()
+    base = yaml_path.parent
 
-    anns = store.data.get("images", {})
-
-    for img_path_str, ann in anns.items():
-        img_path = Path(img_path_str)
-
-        if not img_path.exists():
-            print(f"[MISS] {img_path}")
+    ok = missing = failed = 0
+    for key, shapes in iter_entries(store):
+        img_path = resolve_image(key, base)
+        if img_path is None:
+            print(f"[MISS] {key}")
+            missing += 1
             continue
 
-        img = Image.open(img_path).convert("RGB")
-        draw = ImageDraw.Draw(img)
+        out_path = out_path_for(img_path, suffix, out_dir)
+        try:
+            render_image(img_path, shapes, out_path)
+        except Exception as e:  # keep going on a bad image
+            print(f"[FAIL] {img_path}: {e}")
+            failed += 1
+            continue
 
-        for s in ann["shapes"]:
-            shape = Shape(**s)
-            draw_shape(draw, shape)
-
-        out_path = img_path.with_name(f"{img_path.stem}{suffix}{img_path.suffix}")
-        img.save(out_path)
         print(f"[OK] {out_path}")
+        ok += 1
+
+    print(f"done: {ok} rendered, {missing} missing, {failed} failed")
+    return 1 if failed else 0
 
 
-# =========================================================
+# =========================
 # ENTRY
-# =========================================================
-
-
-def main():
-
-    import sys
-
-    if len(sys.argv) < 2:
-        fp = Path("annotations.yaml")
-    else:
-        fp = Path(sys.argv[1])
-    render(fp)
+# =========================
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Render annotations onto images.")
+    ap.add_argument("yaml", nargs="?", default="annotations.yaml", type=Path)
+    ap.add_argument("--suffix", default=DEFAULT_SUFFIX)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    args = ap.parse_args()
+    return render(args.yaml, args.suffix, args.out_dir)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
