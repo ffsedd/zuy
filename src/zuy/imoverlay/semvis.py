@@ -37,6 +37,12 @@ POINT_MARKER_RADIUS_PX = 6
 POINT_LABEL_FONT_SCALE = 0.6
 EXPORT_ALPHA_LEVELS = (0.8, 0.5, 0.3)
 
+# Boundary-based auto-init tuning
+BOUNDARY_BLUR_KSIZE: int = 5          # GaussianBlur kernel (must be odd)
+BOUNDARY_EPSILON_FRAC: float = 0.02   # polygon approx fraction of arc-length
+BOUNDARY_MIN_CORNERS: int = 3         # minimum usable corners per image
+BOUNDARY_MAX_CORNERS: int = AUTO_INIT_MAX_POINTS  # cap (reuses existing constant)
+
 
 # =====================================================
 # DATA
@@ -148,6 +154,50 @@ def make_mouse_handler(state: RegistrationState, which: str):
     return handler
 
 
+def _segment_sample_mask(img: np.ndarray, *, blur_ksize: int = BOUNDARY_BLUR_KSIZE) -> np.ndarray:
+    """
+    Return a binary mask of the sample region (largest connected component
+    after Otsu threshold).  Works on grayscale or BGR input.
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img.copy()
+    gray = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 0)
+    _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return mask
+    largest = max(contours, key=cv2.contourArea)
+    out = np.zeros_like(mask)
+    cv2.drawContours(out, [largest], -1, 255, thickness=cv2.FILLED)
+    return out
+
+
+def _boundary_corners(
+    mask: np.ndarray,
+    *,
+    epsilon_frac: float = BOUNDARY_EPSILON_FRAC,
+    max_corners: int = BOUNDARY_MAX_CORNERS,
+) -> List[Point]:
+    """
+    Polygon-approximate the outer contour of *mask* and return corner points
+    sorted by angle around the centroid (clockwise from the topmost point).
+    Returns at most *max_corners* points.
+    """
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return []
+    largest = max(contours, key=cv2.contourArea)
+    epsilon = epsilon_frac * cv2.arcLength(largest, True)
+    approx = cv2.approxPolyDP(largest, epsilon, True)
+    pts = [(int(p[0][0]), int(p[0][1])) for p in approx]
+
+    # Sort by angle around centroid for consistent ordering across modalities
+    cx = sum(x for x, _ in pts) / len(pts)
+    cy = sum(y for _, y in pts) / len(pts)
+    pts.sort(key=lambda p: np.arctan2(p[1] - cy, p[0] - cx))
+
+    return pts[:max_corners]
+
+
 def auto_init_points(
     opt_full: np.ndarray,
     sem_full: np.ndarray,
@@ -203,6 +253,52 @@ def auto_init_points(
 
     print(f"[AUTO] initialized {len(pts_opt)} points")
 
+    return pts_opt, pts_sem
+
+
+def auto_init_points_boundary(
+    opt_full: np.ndarray,
+    sem_full: np.ndarray,
+    max_points: int = BOUNDARY_MAX_CORNERS,
+) -> Tuple[List[Point], List[Point]]:
+    """
+    Suggest initial correspondences using sample-boundary corners.
+
+    Segments the sample outline independently in each image via Otsu threshold,
+    polygon-approximates the largest contour to extract corners, then matches
+    corners by angular order around the centroid.
+
+    Returns OPT points in **full-resolution** coordinates and SEM points in
+    **native** (full-resolution) coordinates — same contract as auto_init_points().
+
+    Limitations
+    -----------
+    - Requires the sample to be distinctly brighter or darker than the background
+      in both images (Otsu assumption).
+    - Corner ordering is purely angular; a 90° rotation ambiguity is possible if
+      the sample is near-square.  Resolve with one manual correction after init.
+    - Fails gracefully (returns [], []) if either image has fewer than
+      BOUNDARY_MIN_CORNERS usable corners.
+    """
+    mask_opt = _segment_sample_mask(opt_full)
+    mask_sem = _segment_sample_mask(sem_full)
+
+    corners_opt = _boundary_corners(mask_opt, max_corners=max_points)
+    corners_sem = _boundary_corners(mask_sem, max_corners=max_points)
+
+    if len(corners_opt) < BOUNDARY_MIN_CORNERS or len(corners_sem) < BOUNDARY_MIN_CORNERS:
+        print(
+            f"[BOUNDARY] too few corners — OPT:{len(corners_opt)} SEM:{len(corners_sem)} "
+            f"(need ≥{BOUNDARY_MIN_CORNERS})"
+        )
+        return [], []
+
+    # Pair corners by angular rank; use the shorter list as the limit
+    n = min(len(corners_opt), len(corners_sem), max_points)
+    pts_opt = corners_opt[:n]
+    pts_sem = corners_sem[:n]
+
+    print(f"[BOUNDARY] initialized {n} point pairs from boundary corners")
     return pts_opt, pts_sem
 
 
@@ -344,11 +440,15 @@ def semvis(sem_path: Path, opt_path: Path, *, display_scale: float, alpha: float
     # AUTO INITIALIZATION (NEW)
     # =====================================================
 
-    init_opt, init_sem = auto_init_points(opt_full, sem_full)
+    def _apply_init(pts_opt_full: List[Point], pts_sem_native: List[Point]) -> None:
+        state.opt = [(int(x * display_scale), int(y * display_scale)) for x, y in pts_opt_full]
+        state.sem = list(pts_sem_native)
 
-    # scale OPT points to display space
-    state.opt = [(int(x * display_scale), int(y * display_scale)) for x, y in init_opt]
-    state.sem = init_sem
+    # Startup: attempt boundary-based init; fall back to ORB
+    _init_opt, _init_sem = auto_init_points_boundary(opt_full, sem_full)
+    if not _init_opt:
+        _init_opt, _init_sem = auto_init_points(opt_full, sem_full)
+    _apply_init(_init_opt, _init_sem)
 
     cv2.namedWindow("VIS")
     cv2.namedWindow("SEM")
@@ -363,7 +463,9 @@ Controls
 Click       add point
 Drag        move point
 D           delete last pair
-C           clear
+C           clear all points
+A           auto-init: ORB features (original)
+B           auto-init: boundary corners (new)
 E           export full-resolution result
 ESC         quit
 """)
@@ -385,6 +487,12 @@ ESC         quit
         elif k == ord("c"):
             state.opt.clear()
             state.sem.clear()
+        elif k == ord("a"):
+            _pts_opt, _pts_sem = auto_init_points(opt_full, sem_full)
+            _apply_init(_pts_opt, _pts_sem)
+        elif k == ord("b"):
+            _pts_opt, _pts_sem = auto_init_points_boundary(opt_full, sem_full)
+            _apply_init(_pts_opt, _pts_sem)
         elif k == ord("e"):
             export_full(
                 state,
