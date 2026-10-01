@@ -8,9 +8,11 @@ import logging
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
+from tkinter import messagebox, ttk
 
 import cv2
 import numpy as np
+from PIL import Image, ImageTk
 
 # ============================================================================
 # Logging
@@ -390,16 +392,7 @@ def display_to_full_point(
     )
 
 
-def screen_size() -> tuple[int, int]:
-    root = tk.Tk()
-    root.withdraw()
 
-    width = root.winfo_screenwidth()
-    height = root.winfo_screenheight()
-
-    root.destroy()
-
-    return width, height
 
 
 # ============================================================================
@@ -442,10 +435,22 @@ def draw_points(
     return output
 
 
+def canvas_to_full_point(
+    canvas_point: tuple[int | float, int | float],
+    scale: float,
+    offset: tuple[float, float] = (0.0, 0.0),
+) -> Point:
+    return (
+        round((canvas_point[0] - offset[0]) / scale),
+        round((canvas_point[1] - offset[1]) / scale),
+    )
+
+
 def nearest_point_index(
     points: list[Point],
     display_point: Point,
     display_scale: float,
+    offset: tuple[float, float] = (0.0, 0.0),
     radius: float = DRAG_HIT_RADIUS_PX,
 ) -> int | None:
     if not points:
@@ -455,12 +460,15 @@ def nearest_point_index(
     best_distance_sq = radius * radius
 
     x, y = display_point
+    ox, oy = offset
 
     for index, point in enumerate(points):
         px, py = full_to_display_point(
             point,
             display_scale,
         )
+        px += ox
+        py += oy
 
         dx = px - x
         dy = py - y
@@ -546,14 +554,13 @@ def homography_full(
 
 def homography_display(
     state: RegistrationState,
-    display_scale: float,
+    vis_scale: float,
+    sem_scale: float = 1.0,
 ) -> np.ndarray | None:
     """
     Convert VIS(full) -> SEM(full) into:
 
-        VIS(display) -> SEM(full)
-
-    SEM is not scaled.
+        VIS(display) -> SEM(display)
     """
 
     homography = homography_full(
@@ -563,16 +570,28 @@ def homography_display(
     if homography is None:
         return None
 
-    scale_inverse = np.array(
+    scale_vis_inv = np.array(
         [
-            [1.0 / display_scale, 0.0, 0.0],
-            [0.0, 1.0 / display_scale, 0.0],
+            [1.0 / vis_scale, 0.0, 0.0],
+            [0.0, 1.0 / vis_scale, 0.0],
             [0.0, 0.0, 1.0],
         ],
         dtype=np.float64,
     )
 
-    return homography @ scale_inverse
+    if sem_scale == 1.0:
+        return homography @ scale_vis_inv
+
+    scale_sem_mat = np.array(
+        [
+            [sem_scale, 0.0, 0.0],
+            [0.0, sem_scale, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+
+    return scale_sem_mat @ homography @ scale_vis_inv
 
 
 # ============================================================================
@@ -584,12 +603,14 @@ def preview_overlay(
     vis_display: np.ndarray,
     sem_display: np.ndarray,
     state: RegistrationState,
-    display_scale: float,
+    vis_scale: float,
     alpha: float,
+    sem_scale: float = 1.0,
 ) -> np.ndarray:
     homography = homography_display(
         state,
-        display_scale,
+        vis_scale,
+        sem_scale,
     )
 
     if homography is None:
@@ -1037,32 +1058,631 @@ def auto_init_points_boundary(
 # ============================================================================
 
 
-WINDOW_VIS = "VIS"
-WINDOW_SEM = "SEM"
-WINDOW_PREVIEW = "SEM + warped VIS"
+class SemVisApp:
+    """Three-pane Tkinter GUI with synced zoom and fit-to-width."""
 
+    def __init__(
+        self,
+        root: tk.Tk,
+        vis_full: np.ndarray,
+        sem_full: np.ndarray,
+        state: RegistrationState,
+        display_scale: float,
+        alpha: float,
+        vis_path: Path,
+        sem_path: Path,
+    ) -> None:
+        self._root = root
+        self._vis_full = vis_full
+        self._sem_full = sem_full
+        self._state = state
+        self._alpha = alpha
+        self._vis_path = vis_path
+        self._sem_path = sem_path
 
-def _draw_vis_window(
-    vis_display: np.ndarray,
-    state: RegistrationState,
-    display_scale: float,
-) -> np.ndarray:
-    return draw_points(
-        vis_display,
-        state.vis,
-        display_scale,
-    )
+        self._root.title("semvis - Registration")
 
+        # Configure window size
+        screen_w = self._root.winfo_screenwidth()
+        screen_h = self._root.winfo_screenheight()
+        win_w = max(960, screen_w - 40)
+        win_h = max(600, screen_h - 100)
+        self._root.geometry(f"{win_w}x{win_h}+10+10")
+        self._root.update_idletasks()
 
-def _draw_sem_window(
-    sem_display: np.ndarray,
-    state: RegistrationState,
-) -> np.ndarray:
-    return draw_points(
-        sem_display,
-        state.sem,
-        1.0,
-    )
+        # Fit images to window pane width on start
+        pane_w = max(200, (win_w - 30) // 3)
+        self._base_scale_vis = pane_w / vis_full.shape[1]
+        self._base_scale_sem = pane_w / sem_full.shape[1]
+
+        self._zoom: float = 1.0
+        self._offsets: dict[str, list[float]] = {
+            "vis": [0.0, 0.0],
+            "sem": [0.0, 0.0],
+            "preview": [0.0, 0.0],
+        }
+
+        self._pan_start_x: int | None = None
+        self._pan_start_y: int | None = None
+
+        # Keep PhotoImage references to prevent garbage collection
+        self._vis_photo: ImageTk.PhotoImage | None = None
+        self._sem_photo: ImageTk.PhotoImage | None = None
+        self._preview_photo: ImageTk.PhotoImage | None = None
+
+        self._create_widgets()
+        self._bind_events()
+        self._refresh()
+
+    def _create_widgets(self) -> None:
+        # Toolbar
+        toolbar = ttk.Frame(self._root, padding=4)
+        toolbar.pack(side=tk.TOP, fill=tk.X)
+
+        ttk.Button(toolbar, text="Fit Width (0)", command=self._cmd_fit).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="ORB (A)", command=self._cmd_orb).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Boundary (B)", command=self._cmd_boundary).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Clear (C)", command=self._cmd_clear).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Delete Last (D)", command=self._cmd_delete).pack(side=tk.LEFT, padx=2)
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
+        ttk.Button(toolbar, text="Save (S)", command=self._cmd_save).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Export (E)", command=self._cmd_export).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Quit (ESC)", command=self._cmd_quit).pack(side=tk.RIGHT, padx=2)
+
+        # Status Bar
+        self._status_var = tk.StringVar()
+        statusbar = ttk.Label(
+            self._root,
+            textvariable=self._status_var,
+            relief=tk.SUNKEN,
+            anchor=tk.W,
+            padding=(6, 3),
+        )
+        statusbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Panes container
+        panes = ttk.PanedWindow(self._root, orient=tk.HORIZONTAL)
+        panes.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+        # VIS Pane
+        vis_frame = ttk.LabelFrame(panes, text="VIS", padding=2)
+        panes.add(vis_frame, weight=1)
+        self._vis_canvas = tk.Canvas(
+            vis_frame,
+            bg="black",
+            highlightthickness=0,
+        )
+        self._vis_canvas.pack(fill=tk.BOTH, expand=True)
+        self._vis_img_id = self._vis_canvas.create_image(0, 0, anchor=tk.NW)
+
+        # SEM Pane
+        sem_frame = ttk.LabelFrame(panes, text="SEM", padding=2)
+        panes.add(sem_frame, weight=1)
+        self._sem_canvas = tk.Canvas(
+            sem_frame,
+            bg="black",
+            highlightthickness=0,
+        )
+        self._sem_canvas.pack(fill=tk.BOTH, expand=True)
+        self._sem_img_id = self._sem_canvas.create_image(0, 0, anchor=tk.NW)
+
+        # Preview Pane
+        preview_frame = ttk.LabelFrame(panes, text="SEM + warped VIS", padding=2)
+        panes.add(preview_frame, weight=1)
+        self._preview_canvas = tk.Canvas(
+            preview_frame,
+            bg="black",
+            highlightthickness=0,
+        )
+        self._preview_canvas.pack(fill=tk.BOTH, expand=True)
+        self._preview_img_id = self._preview_canvas.create_image(0, 0, anchor=tk.NW)
+
+    def _bind_events(self) -> None:
+        # Mouse bindings for VIS canvas
+        self._vis_canvas.bind("<ButtonPress-1>", self._vis_press)
+        self._vis_canvas.bind("<B1-Motion>", self._vis_motion)
+        self._vis_canvas.bind("<ButtonRelease-1>", self._vis_release)
+
+        # Mouse bindings for SEM canvas
+        self._sem_canvas.bind("<ButtonPress-1>", self._sem_press)
+        self._sem_canvas.bind("<B1-Motion>", self._sem_motion)
+        self._sem_canvas.bind("<ButtonRelease-1>", self._sem_release)
+
+        # Synced Zoom and Pan on all canvases
+        for canvas in (self._vis_canvas, self._sem_canvas, self._preview_canvas):
+            # Linux scroll wheel
+            canvas.bind("<Control-Button-4>", lambda e: self._on_zoom(e, 1.15))
+            canvas.bind("<Control-Button-5>", lambda e: self._on_zoom(e, 1.0 / 1.15))
+            # Windows / macOS / Tk wheel
+            canvas.bind("<Control-MouseWheel>", self._on_mousewheel)
+
+            # Panning with middle mouse button
+            canvas.bind("<ButtonPress-2>", self._pan_start)
+            canvas.bind("<B2-Motion>", self._pan_move)
+            canvas.bind("<ButtonRelease-2>", self._pan_end)
+
+            # Panning with right mouse button
+            canvas.bind("<ButtonPress-3>", self._pan_start)
+            canvas.bind("<B3-Motion>", self._pan_move)
+            canvas.bind("<ButtonRelease-3>", self._pan_end)
+
+        # Global key shortcuts
+        self._root.bind("<Escape>", lambda _: self._cmd_quit())
+        self._root.bind("<KeyPress-0>", lambda _: self._cmd_fit())
+        self._root.bind("<KeyPress-r>", lambda _: self._cmd_fit())
+        self._root.bind("<KeyPress-R>", lambda _: self._cmd_fit())
+        self._root.bind("<KeyPress-a>", lambda _: self._cmd_orb())
+        self._root.bind("<KeyPress-A>", lambda _: self._cmd_orb())
+        self._root.bind("<KeyPress-b>", lambda _: self._cmd_boundary())
+        self._root.bind("<KeyPress-B>", lambda _: self._cmd_boundary())
+        self._root.bind("<KeyPress-c>", lambda _: self._cmd_clear())
+        self._root.bind("<KeyPress-C>", lambda _: self._cmd_clear())
+        self._root.bind("<KeyPress-d>", lambda _: self._cmd_delete())
+        self._root.bind("<KeyPress-D>", lambda _: self._cmd_delete())
+        self._root.bind("<KeyPress-s>", lambda _: self._cmd_save())
+        self._root.bind("<KeyPress-S>", lambda _: self._cmd_save())
+        self._root.bind("<KeyPress-e>", lambda _: self._cmd_export())
+        self._root.bind("<KeyPress-E>", lambda _: self._cmd_export())
+
+    def _on_zoom(self, event: tk.Event, factor: float) -> None:
+        mx = event.x
+        my = event.y
+
+        old_zoom = self._zoom
+        new_zoom = max(0.05, min(50.0, old_zoom * factor))
+        if abs(new_zoom - old_zoom) < 1e-6:
+            return
+
+        actual_factor = new_zoom / old_zoom
+        self._zoom = new_zoom
+
+        # Keep same pixel under mouse position across all 3 synced views
+        for view_name in ("vis", "sem", "preview"):
+            ox, oy = self._offsets[view_name]
+            self._offsets[view_name][0] = mx - (mx - ox) * actual_factor
+            self._offsets[view_name][1] = my - (my - oy) * actual_factor
+
+        self._refresh()
+
+    def _on_mousewheel(self, event: tk.Event) -> None:
+        if event.delta > 0:
+            self._on_zoom(event, 1.15)
+        elif event.delta < 0:
+            self._on_zoom(event, 1.0 / 1.15)
+
+    def _pan_start(self, event: tk.Event) -> None:
+        self._pan_start_x = event.x
+        self._pan_start_y = event.y
+
+    def _pan_move(self, event: tk.Event) -> None:
+        if self._pan_start_x is not None and self._pan_start_y is not None:
+            dx = event.x - self._pan_start_x
+            dy = event.y - self._pan_start_y
+            self._pan_start_x = event.x
+            self._pan_start_y = event.y
+
+            for view_name in ("vis", "sem", "preview"):
+                self._offsets[view_name][0] += dx
+                self._offsets[view_name][1] += dy
+
+            self._refresh()
+
+    def _pan_end(self, event: tk.Event) -> None:
+        del event
+        self._pan_start_x = None
+        self._pan_start_y = None
+
+    def _cmd_fit(self) -> None:
+        self._zoom = 1.0
+        for key in self._offsets:
+            self._offsets[key] = [0.0, 0.0]
+        self._refresh()
+
+    def _numpy_to_photoimage(self, bgr: np.ndarray) -> ImageTk.PhotoImage:
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        pil = Image.fromarray(rgb)
+        return ImageTk.PhotoImage(pil)
+
+    def _update_status(self) -> None:
+        valid_str = (
+            "✓ valid (ready to save/export)"
+            if self._state.valid()
+            else "✗ need at least 4 matching point pairs"
+        )
+        zoom_pct = round(self._zoom * 100)
+        self._status_var.set(
+            f"Zoom: {zoom_pct}% | "
+            f"VIS points: {len(self._state.vis)} | "
+            f"SEM points: {len(self._state.sem)} | "
+            f"Pairs: {self._state.pair_count()} | "
+            f"{valid_str} | "
+            f"[Ctrl+Wheel: Zoom | Mid/Right drag: Pan]"
+        )
+
+    def _refresh(self) -> None:
+        LOGGER.debug(
+            "Refreshing GUI: VIS=%d SEM=%d pairs=%d valid=%s zoom=%.2f",
+            len(self._state.vis),
+            len(self._state.sem),
+            self._state.pair_count(),
+            self._state.valid(),
+            self._zoom,
+        )
+
+        scale_vis = self._base_scale_vis * self._zoom
+        scale_sem = self._base_scale_sem * self._zoom
+
+        vis_display = resize_for_display(
+            self._vis_full,
+            scale_vis,
+        )
+        sem_display = resize_for_display(
+            self._sem_full,
+            scale_sem,
+        )
+
+        vis_window = draw_points(
+            vis_display,
+            self._state.vis,
+            scale_vis,
+        )
+
+        sem_window = draw_points(
+            sem_display,
+            self._state.sem,
+            scale_sem,
+        )
+
+        preview = preview_overlay(
+            vis_display,
+            sem_display,
+            self._state,
+            scale_vis,
+            self._alpha,
+            sem_scale=scale_sem,
+        )
+
+        self._vis_photo = self._numpy_to_photoimage(vis_window)
+        self._sem_photo = self._numpy_to_photoimage(sem_window)
+        self._preview_photo = self._numpy_to_photoimage(preview)
+
+        self._vis_canvas.itemconfig(self._vis_img_id, image=self._vis_photo)
+        self._vis_canvas.coords(self._vis_img_id, self._offsets["vis"][0], self._offsets["vis"][1])
+
+        self._sem_canvas.itemconfig(self._sem_img_id, image=self._sem_photo)
+        self._sem_canvas.coords(self._sem_img_id, self._offsets["sem"][0], self._offsets["sem"][1])
+
+        self._preview_canvas.itemconfig(self._preview_img_id, image=self._preview_photo)
+        self._preview_canvas.coords(self._preview_img_id, self._offsets["preview"][0], self._offsets["preview"][1])
+
+        self._update_status()
+
+    # ------------------------------------------------------------------------
+    # VIS mouse
+    # ------------------------------------------------------------------------
+
+    def _vis_press(self, event: tk.Event) -> None:
+        scale = self._base_scale_vis * self._zoom
+        offset = (self._offsets["vis"][0], self._offsets["vis"][1])
+
+        index = nearest_point_index(
+            self._state.vis,
+            (event.x, event.y),
+            scale,
+            offset=offset,
+        )
+
+        if index is not None:
+            LOGGER.debug(
+                "VIS drag start: point %d",
+                index + 1,
+            )
+            self._state.drag_idx = index
+            self._state.drag_mode = "vis"
+        else:
+            point = canvas_to_full_point(
+                (event.x, event.y),
+                scale,
+                offset=offset,
+            )
+            if 0 <= point[0] < self._vis_full.shape[1] and 0 <= point[1] < self._vis_full.shape[0]:
+                LOGGER.info(
+                    "Adding VIS point %d: %s",
+                    len(self._state.vis) + 1,
+                    point,
+                )
+                self._state.vis.append(point)
+
+        self._refresh()
+
+    def _vis_motion(self, event: tk.Event) -> None:
+        if self._state.drag_idx is not None and self._state.drag_mode == "vis":
+            scale = self._base_scale_vis * self._zoom
+            offset = (self._offsets["vis"][0], self._offsets["vis"][1])
+
+            point = canvas_to_full_point(
+                (event.x, event.y),
+                scale,
+                offset=offset,
+            )
+            self._state.vis[self._state.drag_idx] = point
+            self._refresh()
+
+    def _vis_release(self, event: tk.Event) -> None:
+        del event
+        if self._state.drag_idx is not None:
+            LOGGER.debug(
+                "VIS drag end: point %d",
+                self._state.drag_idx + 1,
+            )
+        self._state.drag_idx = None
+        self._state.drag_mode = None
+
+    # ------------------------------------------------------------------------
+    # SEM mouse
+    # ------------------------------------------------------------------------
+
+    def _sem_press(self, event: tk.Event) -> None:
+        scale = self._base_scale_sem * self._zoom
+        offset = (self._offsets["sem"][0], self._offsets["sem"][1])
+
+        index = nearest_point_index(
+            self._state.sem,
+            (event.x, event.y),
+            scale,
+            offset=offset,
+        )
+
+        if index is not None:
+            LOGGER.debug(
+                "SEM drag start: point %d",
+                index + 1,
+            )
+            self._state.drag_idx = index
+            self._state.drag_mode = "sem"
+        else:
+            point = canvas_to_full_point(
+                (event.x, event.y),
+                scale,
+                offset=offset,
+            )
+            if 0 <= point[0] < self._sem_full.shape[1] and 0 <= point[1] < self._sem_full.shape[0]:
+                LOGGER.info(
+                    "Adding SEM point %d: (%d,%d)",
+                    len(self._state.sem) + 1,
+                    point[0],
+                    point[1],
+                )
+                self._state.sem.append(point)
+
+        self._refresh()
+
+    def _sem_motion(self, event: tk.Event) -> None:
+        if self._state.drag_idx is not None and self._state.drag_mode == "sem":
+            scale = self._base_scale_sem * self._zoom
+            offset = (self._offsets["sem"][0], self._offsets["sem"][1])
+
+            point = canvas_to_full_point(
+                (event.x, event.y),
+                scale,
+                offset=offset,
+            )
+            self._state.sem[self._state.drag_idx] = point
+            self._refresh()
+
+    def _sem_release(self, event: tk.Event) -> None:
+        del event
+        if self._state.drag_idx is not None:
+            LOGGER.debug(
+                "SEM drag end: point %d",
+                self._state.drag_idx + 1,
+            )
+        self._state.drag_idx = None
+        self._state.drag_mode = None
+
+    # ------------------------------------------------------------------------
+    # Commands / actions
+    # ------------------------------------------------------------------------
+
+    def _cmd_quit(self) -> None:
+        LOGGER.info(
+            "Quitting GUI.",
+        )
+        self._root.destroy()
+
+    def _cmd_delete(self) -> None:
+        LOGGER.info(
+            "Deleting last point.",
+        )
+        if self._state.vis:
+            removed = self._state.vis.pop()
+            LOGGER.debug(
+                "Removed VIS point: %s",
+                removed,
+            )
+        if self._state.sem:
+            removed = self._state.sem.pop()
+            LOGGER.debug(
+                "Removed SEM point: %s",
+                removed,
+            )
+        LOGGER.info(
+            "Points after delete: VIS=%d SEM=%d",
+            len(self._state.vis),
+            len(self._state.sem),
+        )
+        self._refresh()
+
+    def _cmd_clear(self) -> None:
+        LOGGER.info(
+            "Clearing all points.",
+        )
+        self._state.vis.clear()
+        self._state.sem.clear()
+        self._refresh()
+
+    def _cmd_orb(self) -> None:
+        LOGGER.info(
+            "Starting ORB initialization.",
+        )
+        vis_points, sem_points = auto_init_points(
+            self._vis_full,
+            self._sem_full,
+        )
+        if len(vis_points) >= 4:
+            self._state.vis = vis_points
+            self._state.sem = sem_points
+            LOGGER.info(
+                "ORB initialization accepted: %d pairs",
+                len(vis_points),
+            )
+        else:
+            LOGGER.warning(
+                "ORB initialization rejected: %d pairs",
+                len(vis_points),
+            )
+            messagebox.showwarning(
+                "ORB Initialization",
+                f"ORB found fewer than 4 usable point pairs ({len(vis_points)}).",
+            )
+        self._refresh()
+
+    def _cmd_boundary(self) -> None:
+        LOGGER.info(
+            "Starting boundary initialization.",
+        )
+        vis_points, sem_points = auto_init_points_boundary(
+            self._vis_full,
+            self._sem_full,
+        )
+        if len(vis_points) >= 4:
+            self._state.vis = vis_points
+            self._state.sem = sem_points
+            LOGGER.info(
+                "Boundary initialization accepted: %d pairs",
+                len(vis_points),
+            )
+        else:
+            LOGGER.warning(
+                "Boundary initialization rejected: %d pairs",
+                len(vis_points),
+            )
+            messagebox.showwarning(
+                "Boundary Initialization",
+                f"Boundary initialization produced fewer than 4 usable pairs ({len(vis_points)}).",
+            )
+        self._refresh()
+
+    def _cmd_save(self) -> None:
+        LOGGER.info(
+            "Save requested.",
+        )
+        if not self._state.valid():
+            msg = (
+                f"Cannot save: VIS={len(self._state.vis)} SEM={len(self._state.sem)}. "
+                "Need equal counts and at least 4 pairs."
+            )
+            LOGGER.warning(msg)
+            messagebox.showwarning(
+                "Save Registration",
+                msg,
+            )
+            return
+
+        try:
+            registration_file = registration_path(
+                self._sem_path,
+                self._vis_path,
+            )
+            save_registration(
+                registration_file,
+                self._state.registration(),
+            )
+            LOGGER.info(
+                "Registration saved: %s",
+                registration_file,
+            )
+            messagebox.showinfo(
+                "Save Registration",
+                f"Registration saved successfully:\n{registration_file}",
+            )
+        except Exception as exc:
+            LOGGER.exception(
+                "Could not save registration.",
+            )
+            messagebox.showerror(
+                "Save Error",
+                f"Could not save registration:\n{exc}",
+            )
+
+    def _cmd_export(self) -> None:
+        LOGGER.info(
+            "Export requested.",
+        )
+        if not self._state.valid():
+            msg = (
+                f"Cannot export: VIS={len(self._state.vis)} SEM={len(self._state.sem)}. "
+                "Need equal counts and at least 4 pairs."
+            )
+            LOGGER.warning(msg)
+            messagebox.showwarning(
+                "Export",
+                msg,
+            )
+            return
+
+        try:
+            warp_path, blend_path = default_export_paths(
+                self._sem_path,
+                self._vis_path,
+            )
+            export_full(
+                self._vis_full,
+                self._sem_full,
+                self._state,
+                warp_path,
+                blend_path,
+                self._alpha,
+            )
+            registration_file = registration_path(
+                self._sem_path,
+                self._vis_path,
+            )
+            save_registration(
+                registration_file,
+                self._state.registration(),
+            )
+            LOGGER.info(
+                "Registration saved: %s",
+                registration_file,
+            )
+            LOGGER.info(
+                "Warped VIS saved: %s",
+                warp_path,
+            )
+            LOGGER.info(
+                "Overlay saved: %s",
+                blend_path,
+            )
+            messagebox.showinfo(
+                "Export Successful",
+                f"Export completed successfully!\n\n"
+                f"Registration: {registration_file.name}\n"
+                f"Warped VIS: {warp_path.name}\n"
+                f"Overlay: {blend_path.name}",
+            )
+            self._root.destroy()
+        except Exception as exc:
+            LOGGER.exception(
+                "Export failed.",
+            )
+            messagebox.showerror(
+                "Export Error",
+                f"Export failed:\n{exc}",
+            )
+
+    def run(self) -> None:
+        self._root.mainloop()
 
 
 def semvis(
@@ -1081,520 +1701,18 @@ def semvis(
         state.pair_count(),
     )
 
-    vis_display = resize_for_display(
-        vis_full,
-        display_scale,
+    root = tk.Tk()
+    app = SemVisApp(
+        root=root,
+        vis_full=vis_full,
+        sem_full=sem_full,
+        state=state,
+        display_scale=display_scale,
+        alpha=alpha,
+        vis_path=vis_path,
+        sem_path=sem_path,
     )
-
-    sem_display = sem_full.copy()
-
-    screen_w, screen_h = screen_size()
-
-    LOGGER.info(
-        "Screen size: %dx%d",
-        screen_w,
-        screen_h,
-    )
-
-    # Three windows side-by-side.
-    # Each gets one third of the available width.
-    window_w = max(
-        320,
-        screen_w // 3,
-    )
-
-    # Height is chosen to fit the screen while preserving enough room
-    # for the largest image.
-    window_h = max(
-        240,
-        screen_h - 80,
-    )
-
-    LOGGER.info(
-        "GUI window size: %dx%d",
-        window_w,
-        window_h,
-    )
-
-    cv2.namedWindow(
-        WINDOW_VIS,
-        cv2.WINDOW_NORMAL,
-    )
-
-    cv2.namedWindow(
-        WINDOW_SEM,
-        cv2.WINDOW_NORMAL,
-    )
-
-    cv2.namedWindow(
-        WINDOW_PREVIEW,
-        cv2.WINDOW_NORMAL,
-    )
-
-    cv2.resizeWindow(
-        WINDOW_VIS,
-        window_w,
-        window_h,
-    )
-
-    cv2.resizeWindow(
-        WINDOW_SEM,
-        window_w,
-        window_h,
-    )
-
-    cv2.resizeWindow(
-        WINDOW_PREVIEW,
-        window_w,
-        window_h,
-    )
-
-    cv2.moveWindow(
-        WINDOW_VIS,
-        0,
-        0,
-    )
-
-    cv2.moveWindow(
-        WINDOW_SEM,
-        window_w,
-        0,
-    )
-
-    cv2.moveWindow(
-        WINDOW_PREVIEW,
-        2 * window_w,
-        0,
-    )
-
-    def refresh() -> None:
-        LOGGER.debug(
-            "Refreshing GUI: VIS=%d SEM=%d pairs=%d valid=%s",
-            len(state.vis),
-            len(state.sem),
-            state.pair_count(),
-            state.valid(),
-        )
-
-        vis_window = _draw_vis_window(
-            vis_display,
-            state,
-            display_scale,
-        )
-
-        sem_window = _draw_sem_window(
-            sem_display,
-            state,
-        )
-
-        preview = preview_overlay(
-            vis_display,
-            sem_display,
-            state,
-            display_scale,
-            alpha,
-        )
-
-        cv2.imshow(
-            WINDOW_VIS,
-            vis_window,
-        )
-
-        cv2.imshow(
-            WINDOW_SEM,
-            sem_window,
-        )
-
-        cv2.imshow(
-            WINDOW_PREVIEW,
-            preview,
-        )
-
-    # ------------------------------------------------------------------------
-    # VIS mouse
-    # ------------------------------------------------------------------------
-
-    def vis_mouse(
-        event: int,
-        x: int,
-        y: int,
-        flags: int,
-        userdata: object,
-    ) -> None:
-        del userdata
-
-        if event == cv2.EVENT_LBUTTONDOWN:
-            index = nearest_point_index(
-                state.vis,
-                (x, y),
-                display_scale,
-            )
-
-            if index is not None:
-                LOGGER.debug(
-                    "VIS drag start: point %d",
-                    index + 1,
-                )
-
-                state.drag_idx = index
-                state.drag_mode = "vis"
-
-            else:
-                point = display_to_full_point(
-                    (x, y),
-                    display_scale,
-                )
-
-                LOGGER.info(
-                    "Adding VIS point %d: %s",
-                    len(state.vis) + 1,
-                    point,
-                )
-
-                # IMPORTANT:
-                # Do NOT add a placeholder to SEM.
-                #
-                # The two images are independent while points are being
-                # created. Pairing happens by list index once both sides
-                # contain the same number of points.
-                state.vis.append(point)
-
-            refresh()
-
-        elif (
-            event == cv2.EVENT_MOUSEMOVE
-            and state.drag_idx is not None
-            and state.drag_mode == "vis"
-            and flags & cv2.EVENT_FLAG_LBUTTON
-        ):
-            point = display_to_full_point(
-                (x, y),
-                display_scale,
-            )
-
-            state.vis[state.drag_idx] = point
-
-            refresh()
-
-        elif event == cv2.EVENT_LBUTTONUP:
-            if state.drag_idx is not None:
-                LOGGER.debug(
-                    "VIS drag end: point %d",
-                    state.drag_idx + 1,
-                )
-
-            state.drag_idx = None
-            state.drag_mode = None
-
-    # ------------------------------------------------------------------------
-    # SEM mouse
-    # ------------------------------------------------------------------------
-
-    def sem_mouse(
-        event: int,
-        x: int,
-        y: int,
-        flags: int,
-        userdata: object,
-    ) -> None:
-        del userdata
-
-        if event == cv2.EVENT_LBUTTONDOWN:
-            index = nearest_point_index(
-                state.sem,
-                (x, y),
-                1.0,
-            )
-
-            if index is not None:
-                LOGGER.debug(
-                    "SEM drag start: point %d",
-                    index + 1,
-                )
-
-                state.drag_idx = index
-                state.drag_mode = "sem"
-
-            else:
-                LOGGER.info(
-                    "Adding SEM point %d: (%d,%d)",
-                    len(state.sem) + 1,
-                    x,
-                    y,
-                )
-
-                # IMPORTANT:
-                # Do NOT add a placeholder to VIS.
-                state.sem.append(
-                    (x, y),
-                )
-
-            refresh()
-
-        elif (
-            event == cv2.EVENT_MOUSEMOVE
-            and state.drag_idx is not None
-            and state.drag_mode == "sem"
-            and flags & cv2.EVENT_FLAG_LBUTTON
-        ):
-            state.sem[state.drag_idx] = (
-                x,
-                y,
-            )
-
-            refresh()
-
-        elif event == cv2.EVENT_LBUTTONUP:
-            if state.drag_idx is not None:
-                LOGGER.debug(
-                    "SEM drag end: point %d",
-                    state.drag_idx + 1,
-                )
-
-            state.drag_idx = None
-            state.drag_mode = None
-
-    cv2.setMouseCallback(
-        WINDOW_VIS,
-        vis_mouse,
-    )
-
-    cv2.setMouseCallback(
-        WINDOW_SEM,
-        sem_mouse,
-    )
-
-    refresh()
-
-    LOGGER.info(
-        "Controls: A=ORB B=boundary C=clear D=delete E=export S=save ESC=quit",
-    )
-
-    while True:
-        key = cv2.waitKey(30) & 0xFF
-
-        # ------------------------------------------------------------
-        # Quit
-        # ------------------------------------------------------------
-
-        if key == 27:
-            LOGGER.info(
-                "ESC pressed; quitting.",
-            )
-            break
-
-        # ------------------------------------------------------------
-        # Delete last point
-        # ------------------------------------------------------------
-
-        elif key in (ord("d"), ord("D")):
-            LOGGER.info(
-                "D pressed: deleting last point.",
-            )
-
-            if state.vis:
-                removed = state.vis.pop()
-
-                LOGGER.debug(
-                    "Removed VIS point: %s",
-                    removed,
-                )
-
-            if state.sem:
-                removed = state.sem.pop()
-
-                LOGGER.debug(
-                    "Removed SEM point: %s",
-                    removed,
-                )
-
-            LOGGER.info(
-                "Points after delete: VIS=%d SEM=%d",
-                len(state.vis),
-                len(state.sem),
-            )
-
-            refresh()
-
-        # ------------------------------------------------------------
-        # Clear
-        # ------------------------------------------------------------
-
-        elif key in (ord("c"), ord("C")):
-            LOGGER.info(
-                "C pressed: clearing all points.",
-            )
-
-            state.vis.clear()
-            state.sem.clear()
-
-            refresh()
-
-        # ------------------------------------------------------------
-        # ORB
-        # ------------------------------------------------------------
-
-        elif key in (ord("a"), ord("A")):
-            LOGGER.info(
-                "A pressed: starting ORB initialization.",
-            )
-
-            vis_points, sem_points = auto_init_points(
-                vis_full,
-                sem_full,
-            )
-
-            if len(vis_points) >= 4:
-                state.vis = vis_points
-                state.sem = sem_points
-
-                LOGGER.info(
-                    "ORB initialization accepted: %d pairs",
-                    len(vis_points),
-                )
-
-            else:
-                LOGGER.warning(
-                    "ORB initialization rejected: %d pairs",
-                    len(vis_points),
-                )
-
-            refresh()
-
-        # ------------------------------------------------------------
-        # Boundary
-        # ------------------------------------------------------------
-
-        elif key in (ord("b"), ord("B")):
-            LOGGER.info(
-                "B pressed: starting boundary initialization.",
-            )
-
-            vis_points, sem_points = auto_init_points_boundary(
-                vis_full,
-                sem_full,
-            )
-
-            if len(vis_points) >= 4:
-                state.vis = vis_points
-                state.sem = sem_points
-
-                LOGGER.info(
-                    "Boundary initialization accepted: %d pairs",
-                    len(vis_points),
-                )
-
-            else:
-                LOGGER.warning(
-                    "Boundary initialization rejected: %d pairs",
-                    len(vis_points),
-                )
-
-            refresh()
-
-        # ------------------------------------------------------------
-        # Save
-        # ------------------------------------------------------------
-
-        elif key in (ord("s"), ord("S")):
-            LOGGER.info(
-                "S pressed: save requested.",
-            )
-
-            if not state.valid():
-                LOGGER.warning(
-                    "Cannot save: VIS=%d SEM=%d. Need equal counts and at least 4 pairs.",
-                    len(state.vis),
-                    len(state.sem),
-                )
-                continue
-
-            try:
-                registration_file = registration_path(
-                    sem_path,
-                    vis_path,
-                )
-
-                save_registration(
-                    registration_file,
-                    state.registration(),
-                )
-
-                LOGGER.info(
-                    "Registration saved: %s",
-                    registration_file,
-                )
-
-            except Exception:
-                LOGGER.exception(
-                    "Could not save registration.",
-                )
-
-        # ------------------------------------------------------------
-        # Export
-        # ------------------------------------------------------------
-
-        elif key in (ord("e"), ord("E")):
-            LOGGER.info(
-                "E pressed: export requested.",
-            )
-
-            if not state.valid():
-                LOGGER.warning(
-                    "Cannot export: VIS=%d SEM=%d. Need equal counts and at least 4 pairs.",
-                    len(state.vis),
-                    len(state.sem),
-                )
-                continue
-
-            try:
-                warp_path, blend_path = default_export_paths(
-                    sem_path,
-                    vis_path,
-                )
-
-                export_full(
-                    vis_full,
-                    sem_full,
-                    state,
-                    warp_path,
-                    blend_path,
-                    alpha,
-                )
-
-                registration_file = registration_path(
-                    sem_path,
-                    vis_path,
-                )
-
-                save_registration(
-                    registration_file,
-                    state.registration(),
-                )
-
-                LOGGER.info(
-                    "Registration saved: %s",
-                    registration_file,
-                )
-
-                LOGGER.info(
-                    "Warped VIS saved: %s",
-                    warp_path,
-                )
-
-                LOGGER.info(
-                    "Overlay saved: %s",
-                    blend_path,
-                )
-
-                break
-
-            except Exception:
-                LOGGER.exception(
-                    "Export failed.",
-                )
-
-    cv2.destroyAllWindows()
+    app.run()
 
     LOGGER.info(
         "GUI stopped.",
