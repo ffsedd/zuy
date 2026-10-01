@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -93,6 +93,57 @@ def nearest(pt: Point, pts: List[Point]) -> Optional[int]:
     return None
 
 
+def config_path(sem_path: Path, opt_path: Path) -> Path:
+    """Derive the TOML config path from the SEM and optical image paths."""
+    return sem_path.parent / f"{sem_path.stem}_{opt_path.stem}.points.toml"
+
+
+def _manual_toml(data: dict) -> bytes:
+    """Manual TOML writer for simple dicts of point lists (no deps)."""
+    lines = []
+    for key, val in data.items():
+        inner = ", ".join(f"[{x}, {y}]" for x, y in val)
+        lines.append(f"{key} = [{inner}]\n")
+    return "".join(lines).encode()
+
+
+def save_points(path: Path, state: RegistrationState) -> None:
+    """Write current opt/sem point lists to a TOML file."""
+    data = {
+        "opt": [list(p) for p in state.opt],
+        "sem": [list(p) for p in state.sem],
+    }
+    with path.open("wb") as f:
+        # tomli_w is the write counterpart; fall back to manual TOML if unavailable
+        try:
+            import tomli_w
+            tomli_w.dump(data, f)
+        except ImportError:
+            # Manual TOML write (no deps) — safe because data is simple int lists
+            f.write(_manual_toml(data))
+
+
+def load_points(path: Path) -> tuple[list[Point], list[Point]]:
+    """Load opt/sem points from a TOML file. Returns ([], []) on any error."""
+    try:
+        import tomllib  # Python 3.11+ stdlib
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            print("[CONFIG] No TOML reader available; skipping load.")
+            return [], []
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+        opt = [tuple(p) for p in data.get("opt", [])]
+        sem = [tuple(p) for p in data.get("sem", [])]
+        return opt, sem  # type: ignore[return-value]
+    except Exception as e:
+        print(f"[CONFIG] Failed to load {path}: {e}")
+        return [], []
+
+
 # =====================================================
 # HOMOGRAPHY
 # =====================================================
@@ -133,7 +184,11 @@ def preview_overlay(
 # =====================================================
 
 
-def make_mouse_handler(state: RegistrationState, which: str):
+def make_mouse_handler(
+    state: RegistrationState,
+    which: str,
+    on_change: Optional[Callable[[], None]] = None,
+):
     target_pts = state.opt if which == "opt" else state.sem
 
     def handler(event: int, x: int, y: int, flags: int, param: Any) -> None:
@@ -144,11 +199,15 @@ def make_mouse_handler(state: RegistrationState, which: str):
                 state.drag_mode = which
             else:
                 target_pts.append((x, y))
+                if on_change:
+                    on_change()
 
         elif event == cv2.EVENT_MOUSEMOVE and state.drag_mode == which and state.drag_idx is not None:
-            target_pts[state.drag_idx] = (x, y) # type: ignore
+            target_pts[state.drag_idx] = (x, y)  # type: ignore
 
         elif event == cv2.EVENT_LBUTTONUP:
+            if state.drag_idx is not None and on_change:
+                on_change()
             state.drag_idx = None
             state.drag_mode = None
     return handler
@@ -435,27 +494,44 @@ def semvis(sem_path: Path, opt_path: Path, *, display_scale: float, alpha: float
     sem_disp = sem_full.copy()
 
     state = RegistrationState()
+    cfg_path = config_path(sem_path, opt_path)
+
+    def _autosave() -> None:
+        save_points(cfg_path, state)
+        print(f"[CONFIG] saved → {cfg_path}")
 
     # =====================================================
-    # AUTO INITIALIZATION (NEW)
+    # STARTUP: LOAD OR AUTO-INIT
     # =====================================================
 
     def _apply_init(pts_opt_full: List[Point], pts_sem_native: List[Point]) -> None:
         state.opt = [(int(x * display_scale), int(y * display_scale)) for x, y in pts_opt_full]
         state.sem = list(pts_sem_native)
 
-    # Startup: attempt boundary-based init; fall back to ORB
-    _init_opt, _init_sem = auto_init_points_boundary(opt_full, sem_full)
-    if not _init_opt:
-        _init_opt, _init_sem = auto_init_points(opt_full, sem_full)
-    _apply_init(_init_opt, _init_sem)
+    if cfg_path.exists():
+        _loaded_opt, _loaded_sem = load_points(cfg_path)
+        if _loaded_opt and _loaded_sem:
+            state.opt = list(_loaded_opt)
+            state.sem = list(_loaded_sem)
+            print(f"[CONFIG] Loaded {len(state.opt)} point pairs from {cfg_path}")
+        else:
+            print(f"[CONFIG] Config found but empty/corrupt — running auto-init")
+            _init_opt, _init_sem = auto_init_points_boundary(opt_full, sem_full)
+            if not _init_opt:
+                _init_opt, _init_sem = auto_init_points(opt_full, sem_full)
+            _apply_init(_init_opt, _init_sem)
+    else:
+        _init_opt, _init_sem = auto_init_points_boundary(opt_full, sem_full)
+        if not _init_opt:
+            _init_opt, _init_sem = auto_init_points(opt_full, sem_full)
+        _apply_init(_init_opt, _init_sem)
 
     cv2.namedWindow("VIS")
     cv2.namedWindow("SEM")
     cv2.namedWindow("Overlay")
 
-    cv2.setMouseCallback("VIS", make_mouse_handler(state, "opt"))
-    cv2.setMouseCallback("SEM", make_mouse_handler(state, "sem"))
+    cv2.setMouseCallback("VIS", make_mouse_handler(state, "opt", _autosave))
+    cv2.setMouseCallback("SEM", make_mouse_handler(state, "sem", _autosave))
 
     print("""
 Controls
@@ -484,15 +560,19 @@ ESC         quit
                 state.opt.pop()
             if state.sem:
                 state.sem.pop()
+            _autosave()
         elif k == ord("c"):
             state.opt.clear()
             state.sem.clear()
+            _autosave()
         elif k == ord("a"):
             _pts_opt, _pts_sem = auto_init_points(opt_full, sem_full)
             _apply_init(_pts_opt, _pts_sem)
+            _autosave()
         elif k == ord("b"):
             _pts_opt, _pts_sem = auto_init_points_boundary(opt_full, sem_full)
             _apply_init(_pts_opt, _pts_sem)
+            _autosave()
         elif k == ord("e"):
             export_full(
                 state,
@@ -507,11 +587,6 @@ ESC         quit
 
 
 def parsearg():
-    # TODO(refactor): confirm intent for --out/--export/--no-gui
-    # --out is parsed but never used.
-    # --export is parsed but never used (only the in-GUI `e` key triggers export).
-    # --no-gui raises `NotImplementedError` referencing a future headless
-    # mode that needs stored landmark YAML support, which doesn't exist.
     p = argparse.ArgumentParser(description="SEM ↔ Optical image registration tool")
     p.add_argument("sempath", type=Path, help="SEM image path")
     p.add_argument("vispath", type=Path, help="VIS image path")
@@ -519,9 +594,9 @@ def parsearg():
     p.add_argument("--scale", type=float, default=OPT_DISPLAY_SCALE)
     p.add_argument("--alpha", type=float, default=ALPHA)
 
-    p.add_argument("--out", type=Path, default=Path("."))
-    p.add_argument("--no-gui", action="store_true")
-    p.add_argument("--export", action="store_true")
+    p.add_argument("--out", type=Path, default=None, help="Output directory for exported images")
+    p.add_argument("--no-gui", action="store_true", help="Run headlessly using saved points")
+    p.add_argument("--export", action="store_true", help="Export full-resolution result and exit")
 
     return p
 
@@ -529,15 +604,33 @@ def parsearg():
 def main():
     args = parsearg().parse_args()
 
-    # TODO(refactor): confirm intent for --out/--export/--no-gui
-    # --out is parsed but never used.
-    # --export is parsed but never used (only the in-GUI `e` key triggers export).
-    # --no-gui raises `NotImplementedError` referencing a future headless
-    # mode that needs stored landmark YAML support, which doesn't exist.
+    if args.no_gui or args.export:
+        cfg = config_path(args.sempath, args.vispath)
+        if not cfg.exists():
+            raise RuntimeError(f"No saved points at {cfg} — run GUI first to set points.")
+        opt_pts, sem_pts = load_points(cfg)
+        if not opt_pts or not sem_pts:
+            raise RuntimeError(f"Points config {cfg} is empty or corrupted.")
 
-    if args.no_gui:
-        # headless mode requires predefined points (future extension)
-        raise NotImplementedError("Headless mode needs stored landmarks (add YAML support next).")
+        opt_full = cv2.imread(str(args.vispath))
+        sem_full = cv2.imread(str(args.sempath))
+        if opt_full is None or sem_full is None:
+            raise RuntimeError("Image load failed")
+
+        state = RegistrationState(opt=opt_pts, sem=sem_pts)
+        out_dir = args.out if args.out is not None else args.sempath.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        export_full(
+            state,
+            opt_full,
+            sem_full,
+            out_dir / f"{args.vispath.stem}_warped.jpg",
+            out_dir / f"{args.sempath.stem}_blend.jpg",
+            args.scale,
+            args.alpha,
+        )
+        return
 
     semvis(args.sempath, args.vispath, display_scale=args.scale, alpha=args.alpha)
 

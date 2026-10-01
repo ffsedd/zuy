@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "ffsedd", email = "ffsedd@gmail.com" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "jinja2>=3.1.6",
     "matplotlib>=3.10.3",
