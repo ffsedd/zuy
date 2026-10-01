@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
+import os
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,8 +41,8 @@ DEFAULT_VIS_PATH = Path(
 
 DEFAULT_SEM_PATH = Path("/home/m/Dropbox/ZUMI/zakazky/2611_Trinity/sem_result/2611v4.jpg")
 
-VIS_DISPLAY_SCALE = 0.25
-ALPHA = 0.5
+VIS_DISPLAY_SCALE = 1.0
+ALPHA = 0.6
 
 DRAG_HIT_RADIUS_PX = 15
 
@@ -55,7 +57,7 @@ LABEL_FONT = cv2.FONT_HERSHEY_SIMPLEX
 LABEL_SCALE = 0.6
 LABEL_THICKNESS = 2
 
-EXPORT_ALPHA_LEVELS = (0.3,)
+EXPORT_ALPHA_LEVELS = (0.3, 0.6)
 
 BOUNDARY_THRESHOLD = 40
 BOUNDARY_MIN_AREA_FRACTION = 0.01
@@ -90,6 +92,13 @@ class RegistrationPoints:
             and len(self.vis) == len(self.sem)
             and all(x >= 0 and y >= 0 for x, y in self.vis)
             and all(x >= 0 and y >= 0 for x, y in self.sem)
+        )
+
+    def within_bounds(self, vis_shape: tuple[int, ...], sem_shape: tuple[int, ...]) -> bool:
+        return (
+            self.valid()
+            and all(x < vis_shape[1] and y < vis_shape[0] for x, y in self.vis)
+            and all(x < sem_shape[1] and y < sem_shape[0] for x, y in self.sem)
         )
 
 
@@ -214,12 +223,14 @@ def _parse_points(
         if (
             not isinstance(item, list)
             or len(item) != 2
-            or not all(isinstance(v, (int, float)) for v in item)
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in item)
         ):
             raise ValueError(
                 f"Invalid {name}[{index}]: expected [x, y].",
             )
 
+        if not all(math.isfinite(float(v)) for v in item):
+            raise ValueError(f"Invalid {name}[{index}]: coordinates must be finite.")
         x = int(round(float(item[0])))
         y = int(round(float(item[1])))
 
@@ -374,25 +385,24 @@ def resize_for_display(
 
 def full_to_display_point(
     point: Point,
-    scale: float,
+    scale: float | tuple[float, float],
 ) -> Point:
+    sx, sy = (scale, scale) if isinstance(scale, (int, float)) else scale
     return (
-        round(point[0] * scale),
-        round(point[1] * scale),
+        round(point[0] * sx),
+        round(point[1] * sy),
     )
 
 
 def display_to_full_point(
     point: Point,
-    scale: float,
+    scale: float | tuple[float, float],
 ) -> Point:
+    sx, sy = (scale, scale) if isinstance(scale, (int, float)) else scale
     return (
-        round(point[0] / scale),
-        round(point[1] / scale),
+        round(point[0] / sx),
+        round(point[1] / sy),
     )
-
-
-
 
 
 # ============================================================================
@@ -403,7 +413,7 @@ def display_to_full_point(
 def draw_points(
     image: np.ndarray,
     points: list[Point] | tuple[Point, ...],
-    scale: float = 1.0,
+    scale: float | tuple[float, float] = 1.0,
 ) -> np.ndarray:
     output = image.copy()
 
@@ -437,19 +447,17 @@ def draw_points(
 
 def canvas_to_full_point(
     canvas_point: tuple[int | float, int | float],
-    scale: float,
+    scale: float | tuple[float, float],
     offset: tuple[float, float] = (0.0, 0.0),
 ) -> Point:
-    return (
-        round((canvas_point[0] - offset[0]) / scale),
-        round((canvas_point[1] - offset[1]) / scale),
-    )
+    sx, sy = (scale, scale) if isinstance(scale, (int, float)) else scale
+    return (round((canvas_point[0] - offset[0]) / sx), round((canvas_point[1] - offset[1]) / sy))
 
 
 def nearest_point_index(
     points: list[Point],
     display_point: Point,
-    display_scale: float,
+    display_scale: float | tuple[float, float],
     offset: tuple[float, float] = (0.0, 0.0),
     radius: float = DRAG_HIT_RADIUS_PX,
 ) -> int | None:
@@ -463,10 +471,7 @@ def nearest_point_index(
     ox, oy = offset
 
     for index, point in enumerate(points):
-        px, py = full_to_display_point(
-            point,
-            display_scale,
-        )
+        px, py = full_to_display_point(point, display_scale)
         px += ox
         py += oy
 
@@ -528,6 +533,10 @@ def homography_full(
         )
         return None
 
+    if not np.isfinite(homography).all() or abs(float(np.linalg.det(homography))) < 1e-12:
+        LOGGER.warning("Homography is non-finite or degenerate.")
+        return None
+
     if mask is not None:
         inliers = int(mask.sum())
         total = len(mask)
@@ -544,6 +553,17 @@ def homography_full(
             )
             return None
 
+        src_in = src[mask.ravel() != 0]
+        dst_in = dst[mask.ravel() != 0]
+        projected = cv2.perspectiveTransform(src_in.reshape(-1, 1, 2), homography).reshape(-1, 2)
+        reprojection_error = float(np.mean(np.linalg.norm(projected - dst_in, axis=1)))
+        LOGGER.info("Homography mean inlier reprojection error: %.2f px", reprojection_error)
+        if not math.isfinite(reprojection_error) or reprojection_error > 20.0:
+            LOGGER.warning(
+                "Homography rejected: reprojection error is %.2f px.", reprojection_error
+            )
+            return None
+
     LOGGER.debug(
         "VIS -> SEM homography:\n%s",
         homography,
@@ -554,8 +574,8 @@ def homography_full(
 
 def homography_display(
     state: RegistrationState,
-    vis_scale: float,
-    sem_scale: float = 1.0,
+    vis_scale: float | tuple[float, float],
+    sem_scale: float | tuple[float, float] = 1.0,
 ) -> np.ndarray | None:
     """
     Convert VIS(full) -> SEM(full) into:
@@ -570,22 +590,24 @@ def homography_display(
     if homography is None:
         return None
 
+    vis_sx, vis_sy = (vis_scale, vis_scale) if isinstance(vis_scale, (int, float)) else vis_scale
+    sem_sx, sem_sy = (sem_scale, sem_scale) if isinstance(sem_scale, (int, float)) else sem_scale
     scale_vis_inv = np.array(
         [
-            [1.0 / vis_scale, 0.0, 0.0],
-            [0.0, 1.0 / vis_scale, 0.0],
+            [1.0 / vis_sx, 0.0, 0.0],
+            [0.0, 1.0 / vis_sy, 0.0],
             [0.0, 0.0, 1.0],
         ],
         dtype=np.float64,
     )
 
-    if sem_scale == 1.0:
+    if sem_sx == 1.0 and sem_sy == 1.0:
         return homography @ scale_vis_inv
 
     scale_sem_mat = np.array(
         [
-            [sem_scale, 0.0, 0.0],
-            [0.0, sem_scale, 0.0],
+            [sem_sx, 0.0, 0.0],
+            [0.0, sem_sy, 0.0],
             [0.0, 0.0, 1.0],
         ],
         dtype=np.float64,
@@ -644,6 +666,8 @@ def export_full(
     overlay_alpha: float,
     blend_alphas: tuple[float, ...] = EXPORT_ALPHA_LEVELS,
 ) -> None:
+    if not 0.0 <= overlay_alpha <= 1.0 or any(not 0.0 <= alpha <= 1.0 for alpha in blend_alphas):
+        raise ValueError("Overlay alpha values must be between 0 and 1.")
     LOGGER.info(
         "Starting full-resolution export.",
     )
@@ -667,28 +691,14 @@ def export_full(
         borderMode=cv2.BORDER_CONSTANT,
     )
 
-    warp_out_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    blend_out_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    outputs: list[tuple[Path, np.ndarray]] = []
 
     LOGGER.info(
         "Writing warped VIS: %s",
         warp_out_path,
     )
 
-    if not cv2.imwrite(
-        str(warp_out_path),
-        warped_vis,
-    ):
-        raise RuntimeError(
-            f"Could not write warped VIS image: {warp_out_path}",
-        )
+    outputs.append((warp_out_path, warped_vis))
 
     blended = cv2.addWeighted(
         sem_full,
@@ -704,13 +714,7 @@ def export_full(
         overlay_alpha,
     )
 
-    if not cv2.imwrite(
-        str(blend_out_path),
-        blended,
-    ):
-        raise RuntimeError(
-            f"Could not write overlay image: {blend_out_path}",
-        )
+    outputs.append((blend_out_path, blended))
 
     for alpha in blend_alphas:
         output = cv2.addWeighted(
@@ -736,13 +740,27 @@ def export_full(
             alpha,
         )
 
-        if not cv2.imwrite(
-            str(path),
-            output,
-        ):
-            raise RuntimeError(
-                f"Could not write overlay image: {path}",
+        outputs.append((path, output))
+
+    destinations = [path.resolve() for path, _ in outputs]
+    if len(destinations) != len(set(destinations)):
+        raise ValueError("Export output paths must be distinct.")
+
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for final_path, image in outputs:
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = final_path.with_name(
+                f".{final_path.stem}.{os.getpid()}.tmp{final_path.suffix}"
             )
+            staged.append((temporary, final_path))
+            if not cv2.imwrite(str(temporary), image):
+                raise RuntimeError(f"Could not write image: {final_path}")
+        for temporary, final_path in staged:
+            os.replace(temporary, final_path)
+    finally:
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
 
     LOGGER.info(
         "Export completed successfully.",
@@ -970,45 +988,13 @@ def _boundary_points(
         )
         return []
 
-    perimeter = cv2.arcLength(
-        contour,
-        True,
-    )
-
-    epsilon = 0.02 * perimeter
-
-    polygon = cv2.approxPolyDP(
-        contour,
-        epsilon,
-        True,
-    )
-
-    points = [
-        (
-            int(point[0][0]),
-            int(point[0][1]),
-        )
-        for point in polygon
-    ]
-
-    if len(points) < 4:
-        LOGGER.warning(
-            "Boundary polygon has fewer than 4 vertices.",
-        )
+    # A four-corner bounding box gives consistent TL, TR, BR, BL correspondence
+    # even when the two contours have different numbers/orderings of vertices.
+    x, y, width, height = cv2.boundingRect(contour)
+    if width < 2 or height < 2:
+        LOGGER.warning("Boundary contour has a degenerate bounding box.")
         return []
-
-    center_x = sum(point[0] for point in points) / len(points)
-
-    center_y = sum(point[1] for point in points) / len(points)
-
-    points.sort(
-        key=lambda point: np.arctan2(
-            point[1] - center_y,
-            point[0] - center_x,
-        )
-    )
-
-    return points[:max_corners]
+    return [(x, y), (x + width - 1, y), (x + width - 1, y + height - 1), (x, y + height - 1)]
 
 
 def auto_init_points_boundary(
@@ -1077,6 +1063,7 @@ class SemVisApp:
         self._sem_full = sem_full
         self._state = state
         self._alpha = alpha
+        self._fit_scale_multiplier = display_scale
         self._vis_path = vis_path
         self._sem_path = sem_path
 
@@ -1094,6 +1081,10 @@ class SemVisApp:
         pane_w = max(200, (win_w - 30) // 3)
         self._base_scale_vis = pane_w / vis_full.shape[1]
         self._base_scale_sem = pane_w / sem_full.shape[1]
+        self._base_scale_preview = pane_w / sem_full.shape[1]
+        self._scale_vis_xy = (self._base_scale_vis, self._base_scale_vis)
+        self._scale_sem_xy = (self._base_scale_sem, self._base_scale_sem)
+        self._display_cache: dict[str, tuple[tuple[int, int], np.ndarray]] = {}
 
         self._zoom: float = 1.0
         self._offsets: dict[str, list[float]] = {
@@ -1121,9 +1112,13 @@ class SemVisApp:
 
         ttk.Button(toolbar, text="Fit Width (0)", command=self._cmd_fit).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="ORB (A)", command=self._cmd_orb).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Boundary (B)", command=self._cmd_boundary).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Boundary (B)", command=self._cmd_boundary).pack(
+            side=tk.LEFT, padx=2
+        )
         ttk.Button(toolbar, text="Clear (C)", command=self._cmd_clear).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Delete Last (D)", command=self._cmd_delete).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Delete Last (D)", command=self._cmd_delete).pack(
+            side=tk.LEFT, padx=2
+        )
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
         ttk.Button(toolbar, text="Save (S)", command=self._cmd_save).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Export (E)", command=self._cmd_export).pack(side=tk.LEFT, padx=2)
@@ -1190,11 +1185,12 @@ class SemVisApp:
 
         # Synced Zoom and Pan on all canvases
         for canvas in (self._vis_canvas, self._sem_canvas, self._preview_canvas):
+            canvas.bind("<Configure>", lambda _event: self._refresh())
             # Linux scroll wheel
-            canvas.bind("<Control-Button-4>", lambda e: self._on_zoom(e, 1.15))
-            canvas.bind("<Control-Button-5>", lambda e: self._on_zoom(e, 1.0 / 1.15))
+            canvas.bind("<Button-4>", lambda e: self._on_zoom(e, 1.15))
+            canvas.bind("<Button-5>", lambda e: self._on_zoom(e, 1.0 / 1.15))
             # Windows / macOS / Tk wheel
-            canvas.bind("<Control-MouseWheel>", self._on_mousewheel)
+            canvas.bind("<MouseWheel>", self._on_mousewheel)
 
             # Panning with middle mouse button
             canvas.bind("<ButtonPress-2>", self._pan_start)
@@ -1283,6 +1279,17 @@ class SemVisApp:
         pil = Image.fromarray(rgb)
         return ImageTk.PhotoImage(pil)
 
+    def _display_image(self, name: str, image: np.ndarray, scale: float) -> np.ndarray:
+        width = max(1, round(image.shape[1] * scale))
+        height = max(1, round(image.shape[0] * scale))
+        key = (width, height)
+        cached = self._display_cache.get(name)
+        if cached is None or cached[0] != key:
+            resized = resize_for_display(image, scale)
+            self._display_cache[name] = (key, resized)
+            return resized
+        return cached[1]
+
     def _update_status(self) -> None:
         valid_str = (
             "✓ valid (ready to save/export)"
@@ -1309,17 +1316,37 @@ class SemVisApp:
             self._zoom,
         )
 
-        scale_vis = self._base_scale_vis * self._zoom
-        scale_sem = self._base_scale_sem * self._zoom
+        # Recompute fit scales from the actual canvas sizes after Tk has laid
+        # out the panes. This keeps coordinate conversion tied to the image.
+        pane_w = max(1, self._vis_canvas.winfo_width())
+        sem_w = max(1, self._sem_canvas.winfo_width())
+        preview_w = max(1, self._preview_canvas.winfo_width())
+        self._base_scale_vis = pane_w / self._vis_full.shape[1] * self._fit_scale_multiplier
+        self._base_scale_sem = sem_w / self._sem_full.shape[1] * self._fit_scale_multiplier
+        self._base_scale_preview = preview_w / self._sem_full.shape[1] * self._fit_scale_multiplier
+        nominal_vis_scale = self._base_scale_vis * self._zoom
+        nominal_sem_scale = self._base_scale_sem * self._zoom
+        nominal_preview_scale = self._base_scale_preview * self._zoom
 
-        vis_display = resize_for_display(
-            self._vis_full,
-            scale_vis,
+        vis_display = self._display_image("vis", self._vis_full, nominal_vis_scale)
+        sem_display = self._display_image("sem", self._sem_full, nominal_sem_scale)
+        preview_sem_display = self._display_image(
+            "preview_sem", self._sem_full, nominal_preview_scale
         )
-        sem_display = resize_for_display(
-            self._sem_full,
-            scale_sem,
+        scale_vis = (
+            vis_display.shape[1] / self._vis_full.shape[1],
+            vis_display.shape[0] / self._vis_full.shape[0],
         )
+        scale_sem = (
+            sem_display.shape[1] / self._sem_full.shape[1],
+            sem_display.shape[0] / self._sem_full.shape[0],
+        )
+        scale_preview = (
+            preview_sem_display.shape[1] / self._sem_full.shape[1],
+            preview_sem_display.shape[0] / self._sem_full.shape[0],
+        )
+        self._scale_vis_xy = scale_vis
+        self._scale_sem_xy = scale_sem
 
         vis_window = draw_points(
             vis_display,
@@ -1335,11 +1362,11 @@ class SemVisApp:
 
         preview = preview_overlay(
             vis_display,
-            sem_display,
+            preview_sem_display,
             self._state,
             scale_vis,
             self._alpha,
-            sem_scale=scale_sem,
+            sem_scale=scale_preview,
         )
 
         self._vis_photo = self._numpy_to_photoimage(vis_window)
@@ -1353,7 +1380,9 @@ class SemVisApp:
         self._sem_canvas.coords(self._sem_img_id, self._offsets["sem"][0], self._offsets["sem"][1])
 
         self._preview_canvas.itemconfig(self._preview_img_id, image=self._preview_photo)
-        self._preview_canvas.coords(self._preview_img_id, self._offsets["preview"][0], self._offsets["preview"][1])
+        self._preview_canvas.coords(
+            self._preview_img_id, self._offsets["preview"][0], self._offsets["preview"][1]
+        )
 
         self._update_status()
 
@@ -1362,7 +1391,7 @@ class SemVisApp:
     # ------------------------------------------------------------------------
 
     def _vis_press(self, event: tk.Event) -> None:
-        scale = self._base_scale_vis * self._zoom
+        scale = self._scale_vis_xy
         offset = (self._offsets["vis"][0], self._offsets["vis"][1])
 
         index = nearest_point_index(
@@ -1397,13 +1426,17 @@ class SemVisApp:
 
     def _vis_motion(self, event: tk.Event) -> None:
         if self._state.drag_idx is not None and self._state.drag_mode == "vis":
-            scale = self._base_scale_vis * self._zoom
+            scale = self._scale_vis_xy
             offset = (self._offsets["vis"][0], self._offsets["vis"][1])
 
             point = canvas_to_full_point(
                 (event.x, event.y),
                 scale,
                 offset=offset,
+            )
+            point = (
+                min(max(point[0], 0), self._vis_full.shape[1] - 1),
+                min(max(point[1], 0), self._vis_full.shape[0] - 1),
             )
             self._state.vis[self._state.drag_idx] = point
             self._refresh()
@@ -1423,7 +1456,7 @@ class SemVisApp:
     # ------------------------------------------------------------------------
 
     def _sem_press(self, event: tk.Event) -> None:
-        scale = self._base_scale_sem * self._zoom
+        scale = self._scale_sem_xy
         offset = (self._offsets["sem"][0], self._offsets["sem"][1])
 
         index = nearest_point_index(
@@ -1459,13 +1492,17 @@ class SemVisApp:
 
     def _sem_motion(self, event: tk.Event) -> None:
         if self._state.drag_idx is not None and self._state.drag_mode == "sem":
-            scale = self._base_scale_sem * self._zoom
+            scale = self._scale_sem_xy
             offset = (self._offsets["sem"][0], self._offsets["sem"][1])
 
             point = canvas_to_full_point(
                 (event.x, event.y),
                 scale,
                 offset=offset,
+            )
+            point = (
+                min(max(point[0], 0), self._sem_full.shape[1] - 1),
+                min(max(point[1], 0), self._sem_full.shape[0] - 1),
             )
             self._state.sem[self._state.drag_idx] = point
             self._refresh()
@@ -1767,7 +1804,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--scale",
         type=float,
         default=VIS_DISPLAY_SCALE,
-        help="VIS GUI display scale.",
+        help="Multiplier for each image's fit-to-pane-width scale (default: 1.0).",
     )
 
     parser.add_argument(
@@ -1789,13 +1826,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Logging verbosity.",
     )
 
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--no-gui",
         action="store_true",
-        help="Do not open the GUI.",
+        help="Export using the saved registration without opening the GUI (same as --export).",
     )
 
-    parser.add_argument(
+    mode.add_argument(
         "--export",
         action="store_true",
         help="Export using the saved registration.",
@@ -1846,6 +1884,9 @@ def run_export(
         registration_file,
     )
 
+    if not registration.within_bounds(vis_full.shape, sem_full.shape):
+        raise RuntimeError("Saved registration contains points outside the current image bounds.")
+
     if not registration.valid():
         raise RuntimeError(
             "Saved registration does not contain at least 4 matching point pairs.",
@@ -1860,13 +1901,20 @@ def run_export(
         sem_path,
         vis_path,
     )
+    output_warp = warp_out or default_warp
+    output_blend = blend_out or default_blend
+    protected_paths = {vis_path.resolve(), sem_path.resolve(), registration_file.resolve()}
+    if output_warp.resolve() in protected_paths or output_blend.resolve() in protected_paths:
+        raise ValueError(
+            "Export output paths must not overwrite either input image or the registration file."
+        )
 
     export_full(
         vis_full,
         sem_full,
         state,
-        warp_out or default_warp,
-        blend_out or default_blend,
+        output_warp,
+        output_blend,
         alpha,
     )
 
@@ -1878,6 +1926,9 @@ def run_export(
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    if (args.warp_out or args.blend_out) and not (args.export or args.no_gui):
+        parser.error("--warp-out and --blend-out require --export or --no-gui.")
 
     configure_logging(
         args.log_level,
@@ -1964,6 +2015,10 @@ def main() -> int:
                     vis=list(registration.vis),
                     sem=list(registration.sem),
                 )
+                if not registration.within_bounds(vis_full.shape, sem_full.shape):
+                    raise ValueError(
+                        "Saved registration contains points outside the current image bounds."
+                    )
 
                 LOGGER.info(
                     "Using saved registration: %d point pairs",
