@@ -1,4 +1,4 @@
-import sys
+import argparse
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
@@ -387,12 +387,21 @@ class ImageEditor:
 # =========================
 # RUN
 # =========================
-def main():
-    folder = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="YAML Image Annotator")
+    parser.add_argument(
+        "--dir",
+        type=Path,
+        default=Path("."),
+        help="Directory containing images",
+    )
+    args = parser.parse_args()
+
+    folder = args.dir.expanduser().resolve()
     files = sorted(p for p in folder.iterdir() if p.suffix.lower() in IMAGE_EXTS)
 
     if not files:
-        print("No images found")
+        print(f"No images found in {folder}")
         return
 
     root = tk.Tk()

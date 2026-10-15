@@ -25,9 +25,7 @@ def _draw_circle(draw: ImageDraw.ImageDraw, s: Shape) -> None:
     r = _radius(s)
     # contrast stack: white base + red detail
     draw.ellipse([s.x - r, s.y - r, s.x + r, s.y + r], outline="white", width=9)
-    draw.ellipse(
-        [s.x - r + 3, s.y - r + 3, s.x + r - 3, s.y + r - 3], outline="red", width=3
-    )
+    draw.ellipse([s.x - r + 3, s.y - r + 3, s.x + r - 3, s.y + r - 3], outline="red", width=3)
 
 
 def _draw_cross(draw: ImageDraw.ImageDraw, s: Shape) -> None:
@@ -123,11 +121,32 @@ def render(yaml_path: Path, suffix: str = DEFAULT_SUFFIX, out_dir: Path | None =
 # =========================
 def main() -> int:
     ap = argparse.ArgumentParser(description="Render annotations onto images.")
-    ap.add_argument("yaml", nargs="?", default="annotations.yaml", type=Path)
+
+    source = ap.add_mutually_exclusive_group()
+    source.add_argument(
+        "yaml",
+        nargs="?",
+        type=Path,
+        help="Path to annotations.yaml",
+    )
+    source.add_argument(
+        "--dir",
+        type=Path,
+        help="Directory containing annotations.yaml",
+    )
+
     ap.add_argument("--suffix", default=DEFAULT_SUFFIX)
     ap.add_argument("--out-dir", type=Path, default=None)
+
     args = ap.parse_args()
-    return render(args.yaml, args.suffix, args.out_dir)
+
+    yaml_path = (
+        args.dir / "annotations.yaml"
+        if args.dir is not None
+        else args.yaml or Path("annotations.yaml")
+    )
+
+    return render(yaml_path, args.suffix, args.out_dir)
 
 
 if __name__ == "__main__":
