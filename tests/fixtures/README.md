@@ -16,3 +16,8 @@ smoothed using `Jdx.smooth()` defaults (Savitzky–Golay window 31, polynomial 3
 The reference captures the legacy numerical behavior, not a claim of scientific
 ground truth. Do not regenerate it from the extracted implementation merely to
 make tests pass.
+
+`msa_processing_reference.npz` uses a synthetic 101-point spectrum (linear
+background and a Gaussian peak). Its processed array was captured by executing
+the original `tidy_spectrum()` from commit `716984a`, before extracting the
+workflow. Defaults are moving-average window 5, ASLS lambda 1e6, and p 0.01.

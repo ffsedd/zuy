@@ -1,8 +1,33 @@
 # zuy/spectrum/plotting.py
 from matplotlib import pyplot as plt  # type: ignore
+from matplotlib.axes import Axes
+import numpy as np
+import numpy.typing as npt
 
 from .detect_peaks import detect_peaks
 from .models import Spectrum
+
+
+def plot_baseline_diagnostics(
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
+    baseline: npt.ArrayLike,
+    *,
+    invert_x: bool = False,
+    ax: Axes | None = None,
+) -> Axes:
+    """Plot an existing baseline estimate without fitting or modifying data."""
+    if ax is None:
+        _, ax = plt.subplots()
+    values = np.asarray(y, dtype=float)
+    baseline_values = np.asarray(baseline, dtype=float)
+    ax.plot(x, values, label="Original")
+    ax.plot(x, baseline_values, label="Baseline")
+    ax.plot(x, values - baseline_values, label="Corrected")
+    if invert_x and not ax.xaxis_inverted():
+        ax.invert_xaxis()
+    ax.legend()
+    return ax
 
 
 def plot_spectrum(

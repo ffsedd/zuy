@@ -15,8 +15,8 @@ pytest (31 passed), final Ruff checks; all passed.
 - Approved baseline snapshot: commit `add6b3b`, containing only the existing
   `src/zuy/spectrum/jdx.py` and `tests/test_jdx.py`.
 - Approved dependency addition: deptry installed with `uv add --dev deptry`;
-  pyproject.toml and uv.lock changes remain uncommitted. The pre-existing
-  sortsamples entry must not be included in the dependency commit.
+  dependency updates were committed in cleanup `716984a`. The pre-existing
+  sortsamples entry remains outside our commits.
 - Sample is now at `src/zuy/data/RMP00084.jdx` (moved since the initial check).
 - Baseline quality commands executed from the repository root, in order:
   - `uv run ruff format .`: passed, 9 files reformatted.
@@ -51,7 +51,9 @@ Validation: all required quality commands passed; mypy checked 42 files, deptry
 reported no issues, pytest passed 42 tests. Final Ruff checks passed. One existing
 SciPy sparse efficiency warning remains; numerical outputs are unchanged.
 
-## Step 2 — Extract numerical processing
+## Step 2 — Done
+
+Commit: `c8e269f`. Extract numerical processing.
 
 Move reusable array calculations into processing.py. Keep separate algorithm
 names for moving average, Savitzky–Golay, legacy ASLS, pybaselines ASLS, and arPLS.
@@ -70,6 +72,13 @@ mypy analyzes its source annotations via the same strategy used for XlsxWriter.
 Extract baseline diagnostic plotting and make processing order explicit in reusable
 workflow functions, preserving legacy tidy/subtract/auto_tidy behavior. Test plot
 content and workflow equivalence. Run required checks and commit.
+
+Validation: all required commands passed in order; mypy checked 45 files,
+deptry reported no issues, pytest passed 57 tests, and final Ruff checks passed.
+Plot labels, line values, and IR axis inversion are covered. The actual user
+RMP00084 file was processed, saved, and reloaded successfully against the full
+reference; its original checksum is unchanged. The legacy sparse efficiency
+warning is preserved (five test occurrences), without changing solver behavior.
 
 ## Follow-up outside this extraction
 

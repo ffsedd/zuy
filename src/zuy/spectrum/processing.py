@@ -94,9 +94,9 @@ def tidy_spectrum(
     Spectrum
         New Spectrum with smoothed and baseline-corrected y.
     """
-    y_smooth = smooth(s.y, n=smooth_window)
-    s_smooth = Spectrum(x=s.x.copy(), y=y_smooth, metadata=s.metadata.copy())
-    return baseline_correct(s_smooth, lam=lam, p=p)
+    from .workflows import msa_smooth_then_baseline
+
+    return msa_smooth_then_baseline(s, smooth_window=smooth_window, lam=lam, p=p)
 
 
 def signif(values: npt.ArrayLike, digits: int) -> Array:

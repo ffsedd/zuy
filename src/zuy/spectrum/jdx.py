@@ -717,15 +717,14 @@ class Jdx:
         baseline = processing.estimate_baseline_legacy_asls(values, lam, p, niter)
         corrected = values - baseline
         if plot:
-            import matplotlib.pyplot as plt
+            from zuy.spectrum.plotting import plot_baseline_diagnostics
 
-            _, ax = plt.subplots()
-            ax.plot(self.x, values, label="Original")
-            ax.plot(self.x, baseline, label="Baseline")
-            ax.plot(self.x, corrected, label="Corrected")
-            if self.datatype.lower() == "infrared spectrum":
-                ax.invert_xaxis()
-            ax.legend()
+            plot_baseline_diagnostics(
+                self.x,
+                values,
+                baseline,
+                invert_x=self.datatype.lower() == "infrared spectrum",
+            )
         self.y = corrected
         return self
 
