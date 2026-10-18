@@ -26,6 +26,9 @@ from typing import TYPE_CHECKING, Any, Sequence
 import numpy as np
 import numpy.typing as npt
 
+from zuy.spectrum import processing
+from zuy.spectrum.processing import interpolate_linear as interpolate_linear, signif as signif
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure, SubFigure
@@ -61,18 +64,6 @@ _X_WAVENUMBER = {"1/cm", "cm-1", "cm^-1", "cm ^ -1", "cm⁻¹"}
 _X_MICROMETER = {"micrometers", "micrometer", "um", "µm", "wavelength (um)"}
 _X_NANOMETER = {"nanometers", "nanometer", "nm", "wavelength (nm)"}
 _Y_TRANSMITTANCE = {"transmittance", "transmitance", "reflectance"}
-
-
-def signif(values: npt.ArrayLike, digits: int) -> Array:
-    """Round to significant figures without modifying the input."""
-    if digits < 1:
-        raise ValueError("digits must be positive")
-    arr = np.asarray(values, dtype=float)
-    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-        magnitudes = np.where(np.isfinite(arr) & (arr != 0), np.abs(arr), 1.0)
-        powers = digits - 1 - np.floor(np.log10(magnitudes))
-        scale = np.power(10.0, powers)
-        return np.round(arr * scale) / scale
 
 
 def is_float(value: str) -> bool:
@@ -258,25 +249,6 @@ def _read_jcamp(text: str) -> tuple[dict[str, str], Array, Array]:
     x = np.asarray(xpoints, dtype=float) * float(headers.get("xfactor", 1))
     y = np.asarray(ypoints, dtype=float) * float(headers.get("yfactor", 1))
     return headers, x, y
-
-
-def interpolate_linear(x: npt.ArrayLike, xp: npt.ArrayLike, yp: npt.ArrayLike) -> Array:
-    """Linear interpolation and edge extrapolation; XP can be descending."""
-    xi = np.asarray(x, dtype=float)
-    xs = np.asarray(xp, dtype=float)
-    ys = np.asarray(yp, dtype=float)
-    if len(xs) < 2:
-        raise ValueError("At least two reference points are required")
-    order = np.argsort(xs)
-    xs, ys = xs[order], ys[order]
-    if np.any(np.diff(xs) == 0):
-        raise ValueError("X points must be unique")
-    result = np.interp(xi, xs, ys)
-    left = xi < xs[0]
-    right = xi > xs[-1]
-    result[left] = ys[0] + (xi[left] - xs[0]) * (ys[1] - ys[0]) / (xs[1] - xs[0])
-    result[right] = ys[-1] + (xi[right] - xs[-1]) * (ys[-1] - ys[-2]) / (xs[-1] - xs[-2])
-    return result
 
 
 @dataclass
@@ -579,36 +551,18 @@ class Jdx:
     def clear(self, bounds: tuple[float, float] = (2250, 2450), interp: bool = True) -> Jdx:
         """Replace values in a given X region, independent of axis direction."""
         self._require_data()
-        lo, hi = sorted(bounds)
-        selected = (self.x >= lo) & (self.x <= hi)
-        if not selected.any():
-            return self
-        if not interp:
-            self.y[selected] = np.nan
-            return self
-        valid = ~selected & np.isfinite(self.x) & np.isfinite(self.y)
-        if np.count_nonzero(valid) < 2:
-            LOG.warning("Skipping interpolation: fewer than two points outside %s", bounds)
-            return self
-        # Never extrapolate a clipped band outside the measured range.
-        x_valid = self.x[valid]
-        if min(x_valid) > min(self.x[selected]) or max(x_valid) < max(self.x[selected]):
-            LOG.warning("Skipping interpolation: %s is not bracketed by samples", bounds)
-            return self
-        order = np.argsort(x_valid)
-        self.y[selected] = np.interp(self.x[selected], x_valid[order], self.y[valid][order])
+        self.y[...] = processing.replace_region(self.x, self.y, bounds, interp)
         return self
 
     def to_transmittance(self) -> Jdx:
         if self.yunits.lower() == "absorbance":
-            self.y = np.power(10.0, -self.y)
+            self.y = processing.absorbance_to_transmittance(self.y)
             self.yunits = "TRANSMITTANCE"
         return self
 
     def to_absorbance(self) -> Jdx:
         if self.yunits.lower() in _Y_TRANSMITTANCE:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                self.y = np.where(self.y > 0, -np.log10(self.y), np.nan)
+            self.y = processing.transmittance_to_absorbance(self.y)
             self.yunits = "ABSORBANCE"
         return self
 
@@ -664,29 +618,18 @@ class Jdx:
         return output
 
     def smooth(self, window_size: int = 31, polyorder: int = 3, **kwargs: Any) -> Jdx:
-        """Smooth with SciPy's Savitzky-Golay filter (optional dependency)."""
-        from scipy.signal import savgol_filter
-
+        """Smooth in place with the shared Savitzky–Golay implementation."""
         self._require_data(window_size)
-        if window_size < 3 or window_size % 2 == 0:
-            raise ValueError("window_size must be odd and >= 3")
-        self.y = np.asarray(
-            savgol_filter(self.y, window_length=window_size, polyorder=polyorder, **kwargs),
-            dtype=float,
-        )
+        self.y = processing.smooth_savgol(self.y, window_size, polyorder, **kwargs)
         return self
 
     def find_peaks(
         self, distance: int = 40, prominence: float = 0.005, width: float = 5, **kwargs: Any
     ) -> list[tuple[float, float]]:
         """Find spectral peaks; transmittance/reflectance are inverted."""
-        from scipy.signal import find_peaks as scipy_find_peaks
-
         self._require_data()
         values = -self.y if self.yunits.lower() in _Y_TRANSMITTANCE else self.y
-        indices, _ = scipy_find_peaks(
-            values, distance=distance, prominence=prominence, width=(width, None), **kwargs
-        )
+        indices = processing.find_peak_indices(values, distance, prominence, width, **kwargs)
         return [(float(self.x[i]), float(self.y[i])) for i in indices]
 
     def find_peaks2(
@@ -769,24 +712,9 @@ class Jdx:
         self, plot: bool = False, lam: float = 2e7, p: float = 0.005, niter: int = 10
     ) -> Jdx:
         """Asymmetric least-squares baseline correction (Eilers/Boelens)."""
-        from scipy import sparse
-        from scipy.sparse.linalg import spsolve
-
         self._require_data(3)
-        if not 0 < p < 1 or lam <= 0 or niter < 1:
-            raise ValueError("Require 0 < p < 1, lam > 0 and niter >= 1")
-        if not np.isfinite(self.y).all():
-            raise ValueError("Baseline correction needs finite Y values")
         values = self.y
-        size = len(values)
-        differences = sparse.diags([1, -2, 1], [0, -1, -2], shape=(size, size - 2))
-        curvature = lam * (differences @ differences.T)
-        weights = np.ones(size)
-        baseline = np.zeros(size)
-        for _ in range(niter):
-            weights_matrix = sparse.diags(weights)
-            baseline = np.asarray(spsolve(weights_matrix + curvature, weights * values))
-            weights = np.where(values > baseline, p, 1 - p)
+        baseline = processing.estimate_baseline_legacy_asls(values, lam, p, niter)
         corrected = values - baseline
         if plot:
             import matplotlib.pyplot as plt
@@ -807,19 +735,11 @@ class Jdx:
         x_values_new: tuple[float, float] = (906.7, 2850.7),
         resample: bool = True,
     ) -> Jdx:
-        """Calibrate two X reference points.
-
-        Default ``resample=True`` keeps the old X grid and interpolates Y,
-        matching the old method. Set ``resample=False`` to correct the X axis.
-        """
+        """Calibrate X, optionally resampling onto the original grid (legacy default)."""
         self._require_data(2)
-        old_a, old_b = x_values_old
-        new_a, new_b = x_values_new
-        if old_a == old_b:
-            raise ValueError("Calibration reference X points must differ")
+        corrected_x = processing.calibrate_coordinates(self.x, x_values_old, x_values_new)
         if x_values_old == x_values_new:
             return self
-        corrected_x = new_a + (self.x - old_a) * (new_b - new_a) / (old_b - old_a)
         if resample:
             self.y = interpolate_linear(self.x, corrected_x, self.y)
         else:

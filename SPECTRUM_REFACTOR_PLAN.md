@@ -39,7 +39,9 @@ pytest (31 passed), final Ruff checks; all passed.
   `/mnt/wd/ZUMI-XXL/zzz_zumpy/ir/read/scn.py`. Implement and test the Buck SCN
   format internally; use the existing internal SPA parser. No zumpy dependency.
 
-## Step 1 — Characterize numerical behavior
+## Step 1 — Done
+
+Commit: `4a3d40a`. Characterize numerical behavior.
 
 Add regression coverage for baseline correction, calibration, region replacement,
 descending axes, nonfinite inputs, mutation, and the RMP00084 sample. Capture
@@ -56,6 +58,12 @@ names for moving average, Savitzky–Golay, legacy ASLS, pybaselines ASLS, and a
 Keep Jdx methods and existing utility imports as compatibility wrappers/re-exports.
 Functions must not mutate their inputs. Preserve results and validate with Step 1
 regressions plus direct function checks. Run required checks and commit.
+
+Validation: Ruff format/autofixes, mypy (43 files), deptry, pytest (51 passed),
+final Ruff format and lint checks all passed. Full Raman reference arrays match
+at rtol=1e-8 / atol=1e-9. Shared functions do not mutate inputs, and Jdx.clear
+retains its original in-place Y-array behavior. pybaselines is now imported lazily;
+mypy analyzes its source annotations via the same strategy used for XlsxWriter.
 
 ## Step 3 — Separate plotting and processing workflows
 

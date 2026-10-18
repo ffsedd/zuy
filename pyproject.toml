@@ -59,7 +59,7 @@ semvis = "zuy.imoverlay.semvis:main"
 known_first_party = ["zuy"]
 
 [[tool.mypy.overrides]]
-# XlsxWriter ships annotations but currently omits the py.typed marker.
-# Analyze those annotations rather than ignoring the import.
-module = ["xlsxwriter.*"]
+# Analyze source annotations in dependencies without a py.typed marker.
+# This checks their interfaces rather than ignoring untyped imports.
+module = ["xlsxwriter.*", "pybaselines.*"]
 follow_untyped_imports = true
