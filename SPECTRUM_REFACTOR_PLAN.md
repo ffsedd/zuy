@@ -7,7 +7,10 @@ Preserve unrelated user changes. Repository-wide quality cleanup was approved
 by the user before the extraction; minimal lint/type fixes in the Raman converter
 are included in that cleanup, without changing its conversion behavior.
 
-## Preparation — In progress (repository-wide cleanup approved)
+## Preparation — Done
+
+Cleanup commit: `716984a`. Checks: Ruff format and lint, mypy, deptry,
+pytest (31 passed), final Ruff checks; all passed.
 
 - Approved baseline snapshot: commit `add6b3b`, containing only the existing
   `src/zuy/spectrum/jdx.py` and `tests/test_jdx.py`.
@@ -41,6 +44,10 @@ are included in that cleanup, without changing its conversion behavior.
 Add regression coverage for baseline correction, calibration, region replacement,
 descending axes, nonfinite inputs, mutation, and the RMP00084 sample. Capture
 expected results before extracting algorithms. Run required checks and commit.
+
+Validation: all required quality commands passed; mypy checked 42 files, deptry
+reported no issues, pytest passed 42 tests. Final Ruff checks passed. One existing
+SciPy sparse efficiency warning remains; numerical outputs are unchanged.
 
 ## Step 2 — Extract numerical processing
 
