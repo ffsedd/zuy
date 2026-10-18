@@ -472,11 +472,11 @@ def nearest_point_index(
 
     for index, point in enumerate(points):
         px, py = full_to_display_point(point, display_scale)
-        px += ox
-        py += oy
+        shifted_px = px + ox
+        shifted_py = py + oy
 
-        dx = px - x
-        dy = py - y
+        dx = shifted_px - x
+        dy = shifted_py - y
 
         distance_sq = dx * dx + dy * dy
 
@@ -625,9 +625,9 @@ def preview_overlay(
     vis_display: np.ndarray,
     sem_display: np.ndarray,
     state: RegistrationState,
-    vis_scale: float,
+    vis_scale: float | tuple[float, float],
     alpha: float,
-    sem_scale: float = 1.0,
+    sem_scale: float | tuple[float, float] = 1.0,
 ) -> np.ndarray:
     homography = homography_display(
         state,
@@ -797,7 +797,7 @@ def auto_init_points(
         cv2.COLOR_BGR2GRAY,
     )
 
-    orb = cv2.ORB_create(
+    orb = cv2.ORB.create(
         nfeatures=ORB_FEATURE_COUNT,
     )
 
@@ -862,15 +862,18 @@ def auto_init_points(
     candidates: list[tuple[Point, Point, float]] = []
 
     for match in matches:
-        sem_point = tuple(round(value) for value in keypoints_sem[match.queryIdx].pt)
+        sem_x, sem_y = keypoints_sem[match.queryIdx].pt
+        vis_x, vis_y = keypoints_vis[match.trainIdx].pt
+        sem_point = (round(sem_x), round(sem_y))
+        vis_point = (round(vis_x), round(vis_y))
 
-        vis_point = tuple(round(value) for value in keypoints_vis[match.trainIdx].pt)
-
-        candidates.append((
-            vis_point,
-            sem_point,
-            float(match.distance),
-        ))
+        candidates.append(
+            (
+                vis_point,
+                sem_point,
+                float(match.distance),
+            )
+        )
 
     selected: list[tuple[Point, Point]] = []
 
@@ -898,10 +901,12 @@ def auto_init_points(
         if duplicate:
             continue
 
-        selected.append((
-            vis_point,
-            sem_point,
-        ))
+        selected.append(
+            (
+                vis_point,
+                sem_point,
+            )
+        )
 
         if len(selected) >= max_points:
             break

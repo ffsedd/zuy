@@ -39,11 +39,7 @@ def dataframe_to_latex(
     begin = f"\\begin{{{table_type}}}{{{col_fmt}}}"
     end = f"\\end{{{table_type}}}"
 
-    header_line = (
-        ""
-        if headers is None
-        else f"{header_format} {' & '.join(headers)} \\\\{newline}"
-    )
+    header_line = "" if headers is None else f"{header_format} {' & '.join(headers)} \\\\{newline}"
 
     tex = df.to_csv(
         sep="đ",
@@ -93,9 +89,7 @@ def save_formatted_xlsx(
 
     with pd.ExcelWriter(fpath, engine="xlsxwriter") as writer:
         for i, (sheet, df) in enumerate(dataframes.items()):
-            df.to_excel(
-                writer, sheet_name=sheet, index=index, freeze_panes=freeze_panes
-            )
+            df.to_excel(writer, sheet_name=sheet, index=index, freeze_panes=freeze_panes)
             ws = writer.sheets[sheet]
 
             if i < len(widths):
@@ -112,9 +106,7 @@ def flatten_nested_dicts(dicts: list[dict]) -> pd.DataFrame:
     """
     Convert list of nested dicts into a DataFrame with MultiIndex columns.
     """
-    records = [
-        {(k1, k2): v for k1, sub in d.items() for k2, v in sub.items()} for d in dicts
-    ]
+    records = [{(k1, k2): v for k1, sub in d.items() for k2, v in sub.items()} for d in dicts]
     return pd.DataFrame(records)
 
 

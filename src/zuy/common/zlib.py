@@ -4,8 +4,7 @@ from pathlib import Path
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional, List
-import tempfile
+from typing import Dict, Iterable, List
 
 
 HDIR = Path.home().resolve()
@@ -85,6 +84,7 @@ class ImgParams:
     >>> (p.zak, p.vz, p.obj, p.note)
     ('1234', '2', '40', 'hello-world')
     """
+
     zak: str
     vz: str
     mod: str

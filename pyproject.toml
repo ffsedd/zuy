@@ -8,20 +8,17 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "jinja2>=3.1.6",
+    "cycler>=0.12.1",
     "matplotlib>=3.10.3",
-    "mypy>=1.17.0",
     "natsort>=8.4.0",
+    "numpy>=2.3.1",
     "opencv-python>=4.13.0.92",
     "openpyxl>=3.1.5",
     "pandas>=2.3.1",
     "pillow>=10.0.0",
-    "pyaml>=26.2.1",
     "pybaselines>=1.2.1",
-    "scikit-image>=0.25.2",
+    "pyyaml>=6.0.3",
     "scipy>=1.15.3",
-    "tomli-w>=1.2.0",
-    "tqdm>=4.67.1",
     "xlsxwriter>=3.2.5",
 ]
 
@@ -39,9 +36,9 @@ dev = [
     "pytest-cov>=6.2.1",
     "ruff>=0.12.3",
     "pandas-stubs>=2.3.2.250926",
-    "matplotlib-stubs>=0.3.11",
-
-
+    "deptry>=0.25.1",
+    "scipy-stubs>=1.15.3,<1.16",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 [tool.ruff]
 line-length = 99
@@ -56,3 +53,13 @@ semeds = "zuy.semeds.main:main"
 semangui = "zuy.imannotator.gui:main"
 semandraw = "zuy.imannotator.draw:main"
 semvis = "zuy.imoverlay.semvis:main"
+
+[tool.deptry]
+# The package lives under src/ rather than directly at the project root.
+known_first_party = ["zuy"]
+
+[[tool.mypy.overrides]]
+# XlsxWriter ships annotations but currently omits the py.typed marker.
+# Analyze those annotations rather than ignoring the import.
+module = ["xlsxwriter.*"]
+follow_untyped_imports = true

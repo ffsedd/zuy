@@ -8,7 +8,7 @@ _PATTERN = re.compile(r"(\d{4})_(\d{1,2})")
 
 
 def rename_files_and_dirs(root: Path) -> None:
-    """
+    r"""
     Recursively rename files and directories matching (\d{4})_(\d{1,2}) → \1v\2.
     """
     # First rename directories (bottom-up)

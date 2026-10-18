@@ -10,7 +10,6 @@ def setup_logger(
     console: bool = True,
     log_file: Optional[Path] = None,
 ) -> logging.Logger:
-
     logger = logging.getLogger(name)
     logger.setLevel(level)
     logger.propagate = False  # Prevent double logging in case of root logger config
@@ -30,9 +29,7 @@ def setup_logger(
     # Console formatter
     if console:
         # Define colored level names
-        logging.addLevelName(
-            logging.INFO, f"\033[92m{logging.getLevelName(logging.INFO)}\033[0m"
-        )
+        logging.addLevelName(logging.INFO, f"\033[92m{logging.getLevelName(logging.INFO)}\033[0m")
         logging.addLevelName(
             logging.WARNING, f"\033[33m{logging.getLevelName(logging.WARNING)}\033[0m"
         )

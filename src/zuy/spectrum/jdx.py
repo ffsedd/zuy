@@ -2,7 +2,7 @@
 """JCAMP-DX spectra: load, inspect, process, plot and save.
 
 Dependencies: numpy. Optional: matplotlib (plotting), scipy (peak finding,
-Savitzky-Golay smoothing and baseline correction), zumpy (SPA/SCN readers).
+Savitzky-Golay smoothing and baseline correction). SPA and SCN readers are internal.
 
 ``Jdx`` retains the historical mutable processing API. Binary arithmetic
 returns independent spectra; operations such as ``clear`` and ``subtract``
@@ -28,15 +28,21 @@ import numpy.typing as npt
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
-    from matplotlib.figure import Figure
+    from matplotlib.figure import Figure, SubFigure
 
 Array = npt.NDArray[np.float64]
 LOG = logging.getLogger(__name__)
 
-SQZ_DIGITS = {"@": 0, **{chr(65 + i): i + 1 for i in range(9)},
-              **{chr(97 + i): -(i + 1) for i in range(9)}}
-DIF_DIGITS = {"%": 0, **{chr(74 + i): i + 1 for i in range(9)},
-              **{chr(106 + i): -(i + 1) for i in range(9)}}
+SQZ_DIGITS = {
+    "@": 0,
+    **{chr(65 + i): i + 1 for i in range(9)},
+    **{chr(97 + i): -(i + 1) for i in range(9)},
+}
+DIF_DIGITS = {
+    "%": 0,
+    **{chr(74 + i): i + 1 for i in range(9)},
+    **{chr(106 + i): -(i + 1) for i in range(9)},
+}
 DUP_DIGITS = {**{chr(83 + i): i + 1 for i in range(8)}, "s": 9}
 
 # Historical spellings for code that imports these names.
@@ -112,7 +118,7 @@ def decode_asdf(data: str) -> tuple[list[float], bool]:
             continue
         token = _TOKEN.match(data, index)
         if token is None:
-            raise ValueError(f"Unexpected JCAMP data near {data[index:index+20]!r}")
+            raise ValueError(f"Unexpected JCAMP data near {data[index : index + 20]!r}")
         index = token.end()
         word = token.group()
         mode = token.lastgroup
@@ -152,8 +158,8 @@ def _numeric_pairs(line: str) -> tuple[list[float], list[float]]:
     pos = 0
     numbers: list[float] = []
     for match in tokens:
-        if line[pos:match.start()].strip(" \t,;"):
-            raise ValueError(f"Invalid XY data near {line[pos:match.start()]!r}")
+        if line[pos : match.start()].strip(" \t,;"):
+            raise ValueError(f"Invalid XY data near {line[pos : match.start()]!r}")
         token = match.group()
         numbers.append(float("nan") if token == "?" else float(token))
         pos = match.end()
@@ -269,9 +275,7 @@ def interpolate_linear(x: npt.ArrayLike, xp: npt.ArrayLike, yp: npt.ArrayLike) -
     left = xi < xs[0]
     right = xi > xs[-1]
     result[left] = ys[0] + (xi[left] - xs[0]) * (ys[1] - ys[0]) / (xs[1] - xs[0])
-    result[right] = ys[-1] + (xi[right] - xs[-1]) * (ys[-1] - ys[-2]) / (
-        xs[-1] - xs[-2]
-    )
+    result[right] = ys[-1] + (xi[right] - xs[-1]) * (ys[-1] - ys[-2]) / (xs[-1] - xs[-2])
     return result
 
 
@@ -310,7 +314,7 @@ class Jdx:
     time: time | None = None
     headers: dict[str, str] = field(default_factory=dict, repr=False)
     ax: Axes | None = field(default=None, init=False, repr=False)
-    fig: Figure | None = field(default=None, init=False, repr=False)
+    fig: Figure | SubFigure | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.x = np.asarray(self.x, dtype=float).copy()
@@ -413,7 +417,7 @@ class Jdx:
         result.y = self.y - other.y
         return result
 
-    def __mul__(self, value: Real) -> Jdx | NotImplementedType:
+    def __mul__(self, value: float) -> Jdx | NotImplementedType:
         if not isinstance(value, Real):
             return NotImplemented
         result = self.copy()
@@ -422,7 +426,7 @@ class Jdx:
 
     __rmul__ = __mul__
 
-    def __truediv__(self, value: Real) -> Jdx | NotImplementedType:
+    def __truediv__(self, value: float) -> Jdx | NotImplementedType:
         if not isinstance(value, Real):
             return NotImplemented
         if value == 0:
@@ -651,9 +655,7 @@ class Jdx:
             "XYDATA": "(XY..XY)",
         }
         lines = [f"##{key}={value}" for key, value in headers.items()]
-        lines.extend(
-            f"{x:.12g} {'?' if np.isnan(y) else f'{y:.12g}'}" for x, y in zip(xs, ys)
-        )
+        lines.extend(f"{x:.12g} {'?' if np.isnan(y) else f'{y:.12g}'}" for x, y in zip(xs, ys))
         lines.append("##END=")
         if output.exists() and backup:
             shutil.copy2(output, output.with_suffix(".bak"))
@@ -661,23 +663,21 @@ class Jdx:
         LOG.info("Saved %s", output)
         return output
 
-    def smooth(
-        self, window_size: int = 31, polyorder: int = 3, **kwargs: Any
-    ) -> Jdx:
+    def smooth(self, window_size: int = 31, polyorder: int = 3, **kwargs: Any) -> Jdx:
         """Smooth with SciPy's Savitzky-Golay filter (optional dependency)."""
         from scipy.signal import savgol_filter
 
         self._require_data(window_size)
         if window_size < 3 or window_size % 2 == 0:
             raise ValueError("window_size must be odd and >= 3")
-        self.y = savgol_filter(
-            self.y, window_length=window_size, polyorder=polyorder, **kwargs
+        self.y = np.asarray(
+            savgol_filter(self.y, window_length=window_size, polyorder=polyorder, **kwargs),
+            dtype=float,
         )
         return self
 
     def find_peaks(
-        self, distance: int = 40, prominence: float = 0.005,
-        width: float = 5, **kwargs: Any
+        self, distance: int = 40, prominence: float = 0.005, width: float = 5, **kwargs: Any
     ) -> list[tuple[float, float]]:
         """Find spectral peaks; transmittance/reflectance are inverted."""
         from scipy.signal import find_peaks as scipy_find_peaks
@@ -685,13 +685,12 @@ class Jdx:
         self._require_data()
         values = -self.y if self.yunits.lower() in _Y_TRANSMITTANCE else self.y
         indices, _ = scipy_find_peaks(
-            values, distance=distance, prominence=prominence, width=width, **kwargs
+            values, distance=distance, prominence=prominence, width=(width, None), **kwargs
         )
         return [(float(self.x[i]), float(self.y[i])) for i in indices]
 
     def find_peaks2(
-        self, mph: float = -0.5, mpd: int = 20, threshold: float = 0.000001,
-        **kwargs: Any
+        self, mph: float = -0.5, mpd: int = 20, threshold: float = 0.000001, **kwargs: Any
     ) -> list[tuple[float, float]]:
         """Compatibility wrapper for the previous peak-finding method."""
         return self.find_peaks(
@@ -699,9 +698,13 @@ class Jdx:
         )
 
     def new_plot(
-        self, figsize: tuple[float, float] = (10, 5), ax: Axes | None = None,
-        fig: Figure | None = None, xlim: tuple[float, float] | None = None,
-        ylim: tuple[float, float] | None = None, fontsize: float | None = None
+        self,
+        figsize: tuple[float, float] = (10, 5),
+        ax: Axes | None = None,
+        fig: Figure | None = None,
+        xlim: tuple[float, float] | None = None,
+        ylim: tuple[float, float] | None = None,
+        fontsize: float | None = None,
     ) -> Axes:
         import matplotlib.pyplot as plt
 
@@ -715,16 +718,15 @@ class Jdx:
         self.ax, self.fig = ax, ax.figure
         if fontsize is not None:
             ax.tick_params(axis="both", labelsize=fontsize)
-            ax.xaxis.label.set_size(fontsize)
-            ax.yaxis.label.set_size(fontsize)
+            ax.xaxis.label.set_fontsize(fontsize)
+            ax.yaxis.label.set_fontsize(fontsize)
         if xlim is not None:
             ax.set_xlim(xlim)
         if ylim is not None:
-            ax.set_ylim(ylim)
+            ax.set_ylim(*ylim)
         if self.xunits:
             ax.set_xlabel(
-                "Wavenumber (cm$^{-1}$)" if self.xunits.lower() in _X_WAVENUMBER
-                else self.xunits
+                "Wavenumber (cm$^{-1}$)" if self.xunits.lower() in _X_WAVENUMBER else self.xunits
             )
         if self.yunits:
             ax.set_ylabel(self.yunits.upper())
@@ -733,17 +735,24 @@ class Jdx:
         return ax
 
     def plot(
-        self, title: str | None = None, linewidth: float = 1,
-        ax: Axes | None = None, **kwargs: Any
+        self, title: str | None = None, linewidth: float = 1, ax: Axes | None = None, **kwargs: Any
     ) -> Axes:
         axes = self.new_plot(ax=ax)
-        axes.plot(self.x, self.y, label=title or self.title or self.filestem,
-                  linewidth=linewidth, **kwargs)
+        axes.plot(
+            self.x,
+            self.y,
+            label=title or self.title or self.filestem,
+            linewidth=linewidth,
+            **kwargs,
+        )
         return axes
 
     def plot_peaks(
-        self, rng: tuple[float, float] = (0, 3000), xoffset: float = 0,
-        fontsize: float = 8, **kwargs: Any
+        self,
+        rng: tuple[float, float] = (0, 3000),
+        xoffset: float = 0,
+        fontsize: float = 8,
+        **kwargs: Any,
     ) -> list[tuple[float, float]]:
         import matplotlib.pyplot as plt
 
@@ -751,13 +760,13 @@ class Jdx:
         axes = self.ax if self.ax is not None else plt.gca()
         for px, py in peaks:
             if rng[0] < px < rng[1]:
-                axes.annotate(f"{px:.2f}", xy=(px, py), xytext=(px + xoffset, py),
-                              fontsize=fontsize)
+                axes.annotate(
+                    f"{px:.2f}", xy=(px, py), xytext=(px + xoffset, py), fontsize=fontsize
+                )
         return peaks
 
     def baseline_correction(
-        self, plot: bool = False, lam: float = 2e7, p: float = 0.005,
-        niter: int = 10
+        self, plot: bool = False, lam: float = 2e7, p: float = 0.005, niter: int = 10
     ) -> Jdx:
         """Asymmetric least-squares baseline correction (Eilers/Boelens)."""
         from scipy import sparse
@@ -793,9 +802,10 @@ class Jdx:
         return self
 
     def calibrate_x(
-        self, x_values_old: tuple[float, float] = (906.7, 2850.7),
+        self,
+        x_values_old: tuple[float, float] = (906.7, 2850.7),
         x_values_new: tuple[float, float] = (906.7, 2850.7),
-        resample: bool = True
+        resample: bool = True,
     ) -> Jdx:
         """Calibrate two X reference points.
 
@@ -825,24 +835,26 @@ class Jdx:
         self.filepath = Path(fpath).resolve()
 
     def from_spa(self, fpath: str | Path) -> None:
-        """Use the existing zumpy SPA reader, or standalone fallback."""
-        try:
-            from zumpy.ir.read.spa import Spa
-        except ImportError:
-            self.from_spa2(fpath)
-            return
-        source = Spa(Path(fpath))
-        self._copy_reader(source)
-        self.filepath = Path(fpath).resolve()
+        """Load the supported legacy SPA layout using the internal reader."""
+        self.from_spa2(fpath)
 
     def from_scn(self, fpath: str | Path) -> None:
-        """SCN support requires the existing zumpy reader."""
-        try:
-            from zumpy.ir.read.scn import Scn
-        except ImportError as exc:
-            raise ImportError("SCN loading requires zumpy.ir.read.scn") from exc
-        self._copy_reader(Scn(Path(fpath)))
+        """Load Buck 500 infrared text data using the internal SCN reader."""
+        from zuy.spectrum.scn import read_scn
+
+        source = read_scn(fpath)
+        self.x, self.y = source.x, source.y
+        self.title = source.title
+        self.spectrometerdatasystem = source.instrument
+        self.datatype = "INFRARED SPECTRUM"
+        self.xunits = "1/CM"
+        self.yunits = "ARBITRARY"
+        self.dataprocessing = ""
+        self.date = source.date
+        self.time = None
         self.filepath = Path(fpath).resolve()
+        self.headers = {"longdate": source.acquired}
+        self._require_data()
 
     def _copy_reader(self, source: Any) -> None:
         for name, value in vars(source).items():

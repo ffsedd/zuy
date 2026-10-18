@@ -127,14 +127,16 @@ def test_clear_in_both_x_directions(reverse: bool) -> None:
 
 
 def test_tidy_preserves_unknown_units() -> None:
-    obj = Jdx(x=[1, 2, 3], y=[1, 2, 3], xunits="Raman shift", yunits="COUNTS")
+    obj = Jdx(x=np.array([1, 2, 3]), y=np.array([1, 2, 3]), xunits="Raman shift", yunits="COUNTS")
     obj.tidy()
     assert obj.xunits == "Raman shift"
     np.testing.assert_equal(obj.y, [1, 2, 3])
 
 
 def test_tidy_wavelength_and_transmittance() -> None:
-    obj = Jdx(x=[10, 5, 2.5], y=[1, 0.1, 0.01], xunits="um", yunits="TRANSMITTANCE")
+    obj = Jdx(
+        x=np.array([10, 5, 2.5]), y=np.array([1, 0.1, 0.01]), xunits="um", yunits="TRANSMITTANCE"
+    )
     obj.tidy(clear_co2=False)
     np.testing.assert_equal(obj.x, [1000, 2000, 4000])
     np.testing.assert_allclose(obj.y, [0, 1, 2])
@@ -144,8 +146,9 @@ def test_two_point_calibration_and_interpolation() -> None:
     obj = spectrum([0, 1, 2], [0, 10, 20])
     obj.calibrate_x((0, 2), (1, 3), resample=False)
     np.testing.assert_equal(obj.x, [1, 2, 3])
-    np.testing.assert_allclose(interpolate_linear(np.array([0, 0.5, 3]), [1, 2], [5, 7]),
-                               [3, 4, 9])
+    np.testing.assert_allclose(
+        interpolate_linear(np.array([0, 0.5, 3]), [1, 2], [5, 7]), [3, 4, 9]
+    )
     old = spectrum([0, 1, 2], [0, 10, 20])
     old.calibrate_x((0, 2), (1, 3))
     np.testing.assert_equal(old.x, [0, 1, 2])
@@ -170,7 +173,7 @@ def test_signif_handles_nan_and_zero() -> None:
 def test_scipy_peak_and_smooth() -> None:
     pytest.importorskip("scipy")
     x = np.arange(101, dtype=float)
-    y = np.exp(-0.5 * ((x - 50) / 5)**2)
+    y = np.exp(-0.5 * ((x - 50) / 5) ** 2)
     obj = spectrum(x.tolist(), y.tolist())
     peaks = obj.find_peaks(distance=5, prominence=0.1, width=1)
     assert len(peaks) == 1 and peaks[0][0] == 50
@@ -180,16 +183,18 @@ def test_scipy_peak_and_smooth() -> None:
 
 def test_xy_pairs_without_delimiter_before_negative(tmp_path) -> None:
     path = tmp_path / "compact.dx"
-    path.write_text("##XUNITS=1/CM\n##YUNITS=ABSORBANCE\n"
-                    "##XYDATA=(XY..XY)\n4000-2e-3 3999-3e-3\n##END=\n")
+    path.write_text(
+        "##XUNITS=1/CM\n##YUNITS=ABSORBANCE\n##XYDATA=(XY..XY)\n4000-2e-3 3999-3e-3\n##END=\n"
+    )
     spec = Jdx(path, auto_tidy=False)
     np.testing.assert_array_equal(spec.x, [4000, 3999])
     np.testing.assert_allclose(spec.y, [-0.002, -0.003])
 
 
 def test_tidy_never_fails_for_short_ir_spectrum() -> None:
-    spec = Jdx(x=[2200, 2300, 2400], y=[1, 2, 3],
-               xunits="1/CM", yunits="ABSORBANCE")
+    spec = Jdx(
+        x=np.array([2200, 2300, 2400]), y=np.array([1, 2, 3]), xunits="1/CM", yunits="ABSORBANCE"
+    )
     spec.tidy()
     np.testing.assert_array_equal(spec.y, [1, 2, 3])
 
@@ -206,13 +211,18 @@ def test_save_reload_keeps_input_unmodified(tmp_path) -> None:
 
 
 def test_raman_tidy_does_not_erase_co2_region() -> None:
-    obj = Jdx(x=[2100, 2200, 2300, 2400, 2500], y=[1, 1, 10, 1, 1],
-              xunits="1/CM", yunits="COUNTS", datatype="RAMAN SPECTRUM")
+    obj = Jdx(
+        x=np.array([2100, 2200, 2300, 2400, 2500]),
+        y=np.array([1, 1, 10, 1, 1]),
+        xunits="1/CM",
+        yunits="COUNTS",
+        datatype="RAMAN SPECTRUM",
+    )
     obj.tidy()
     assert obj.y[2] == 10
 
 
 def test_repeated_tidy_does_not_relabel_unsupported_xunits() -> None:
-    obj = Jdx(x=[100, 110], y=[5, 6], xunits="channel", yunits="COUNTS")
+    obj = Jdx(x=np.array([100, 110]), y=np.array([5, 6]), xunits="channel", yunits="COUNTS")
     obj.tidy().tidy()
     assert obj.xunits == "channel"

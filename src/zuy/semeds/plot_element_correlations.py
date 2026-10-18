@@ -59,12 +59,9 @@ IGNORE_PAIRS = [
 
 
 def df2corrs(df, rmin=0) -> pd.DataFrame:
-
     dataCorr = df.corr(method="pearson")
     dataCorr = dataCorr.stack().reset_index()
-    dataCorr = dataCorr[
-        dataCorr["level_0"].astype(str) != dataCorr["level_1"].astype(str)
-    ]
+    dataCorr = dataCorr[dataCorr["level_0"].astype(str) != dataCorr["level_1"].astype(str)]
 
     # filtering out lower/upper triangular duplicates
     dataCorr["ordered-cols"] = dataCorr.apply(
@@ -110,7 +107,6 @@ def plot_corr(df, rmin=0.5, rmax=1) -> None:
 
 
 def plot_correlations_from_tsv(fpath) -> None:
-
     df = pd.read_csv(fpath, sep="\t")
     drop_cols = (
         c
@@ -131,7 +127,6 @@ def plot_correlations_from_tsv(fpath) -> None:
 
 
 def main() -> None:
-
     fp = Path("/home/m/dev/zuy/src/zuy/data/2543v3.tsv")
 
     plot_correlations_from_tsv(fp)
