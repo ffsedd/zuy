@@ -67,7 +67,9 @@ at rtol=1e-8 / atol=1e-9. Shared functions do not mutate inputs, and Jdx.clear
 retains its original in-place Y-array behavior. pybaselines is now imported lazily;
 mypy analyzes its source annotations via the same strategy used for XlsxWriter.
 
-## Step 3 — Separate plotting and processing workflows
+## Step 3 — Done
+
+Commit: `4299b4f`. Separate plotting and processing workflows.
 
 Extract baseline diagnostic plotting and make processing order explicit in reusable
 workflow functions, preserving legacy tidy/subtract/auto_tidy behavior. Test plot
