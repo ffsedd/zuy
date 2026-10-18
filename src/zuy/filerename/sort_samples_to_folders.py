@@ -5,10 +5,10 @@ import argparse
 import logging
 import re
 import shutil
-from pathlib import Path
 from collections.abc import Iterator
+from pathlib import Path
 
-SAMPLE_RE = re.compile(r"\d{4}[v_-]\d{1,2}")
+SAMPLE_RE = re.compile(r"^\d{4}[v_-]\d{1,2}")
 
 logger = logging.getLogger(__name__)
 

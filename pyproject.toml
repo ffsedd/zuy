@@ -55,6 +55,7 @@ semandraw = "zuy.imannotator.draw:main"
 semvis = "zuy.imoverlay.semvis:main"
 sortsamples = "zuy.filerename.sort_samples_to_folders:main"
 ramantojdx = "zuy.raman.ramantojdx:main"
+ramanplotjdx = "zuy.raman.ramanplotjdx:main"
 
 [tool.deptry]
 # The package lives under src/ rather than directly at the project root.

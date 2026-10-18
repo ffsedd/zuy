@@ -27,7 +27,8 @@ import numpy as np
 import numpy.typing as npt
 
 from zuy.spectrum import processing
-from zuy.spectrum.processing import interpolate_linear as interpolate_linear, signif as signif
+from zuy.spectrum.processing import interpolate_linear as interpolate_linear
+from zuy.spectrum.processing import signif as signif
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -704,7 +705,7 @@ class Jdx:
         for px, py in peaks:
             if rng[0] < px < rng[1]:
                 axes.annotate(
-                    f"{px:.2f}", xy=(px, py), xytext=(px + xoffset, py), fontsize=fontsize
+                    f"{px:.1f}", xy=(px, py), xytext=(px + xoffset, py), fontsize=fontsize
                 )
         return peaks
 

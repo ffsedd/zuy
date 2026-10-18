@@ -4,10 +4,11 @@
 from pathlib import Path
 from pprint import pprint
 
-from zuy.spectrum.models import Spectrum
+from zuy.spectrum.jdx import Jdx
 
 ROOT = Path().resolve()  # current dir - ./2034v1/spec.csv  ./2034v1/standardy/anatas.jdx
 SPEC_EXTS = [".csv", ".txt"]
+archive_orig = False
 
 
 def main():
@@ -18,18 +19,18 @@ def main():
     for f in fs:
         print(f)
         try:
-            s = Spectrum(path=f)
+            s = Jdx(filepath=f)
             s.datatype = "RAMAN SPECTRUM"
-            s.title = s.path.stem
+            s.title = f.stem
             s.xunits = "1/CM"
             s.yunits = "INTENSITY"
             s.baseline_correction()
             s.smooth()
-            s.save(s.path.with_suffix(".jdx"))  # save as jdx
-
-            dpath = f.parent / "orig"
-            dpath.mkdir(exist_ok=True)
-            f.rename(dpath / (f.name + ".bak"))
+            s.save(f.with_suffix(".jdx"))  # save as jdx
+            if archive_orig:
+                dpath = f.parent / "orig"
+                dpath.mkdir(exist_ok=True)
+                f.rename(dpath / (f.name + ".bak"))
         except ValueError as e:
             print(f"Spectrum conversion failed: {f}")
             print(f"Error: {e}")
