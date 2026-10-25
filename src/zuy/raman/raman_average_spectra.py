@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
 
+from collections import defaultdict
+from pathlib import Path
 from pprint import pprint
 
-from pathlib import Path
-
-from collections import defaultdict
-
 # ~ from zumpy.ir.jdx import Jdx
-from zumpy.qq.spectrum.spectrum import RamanSpectrum
+from zuy.spectrum.models.spectrum import RamanSpectrum
 
 
 def main():

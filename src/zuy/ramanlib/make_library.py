@@ -2,10 +2,10 @@
 """ """
 
 import logging
-
-from pathlib import Path
 import pickle
-from zumpy.qq.spectrum.spectrum import Spectrum
+from pathlib import Path
+
+from zuy.spectrum.models.spectrum import Spectrum
 
 
 class LibraryManager:

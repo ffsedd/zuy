@@ -1,12 +1,14 @@
+import argparse
 import logging
+import pickle
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
-import argparse
-from zumpy.qq.spectrum.spectrum import Spectrum
-from matplotlib import pyplot as plt
-import pickle
 from IPython.display import display
+from matplotlib import pyplot as plt
+
+from zuy.spectrum.models import Spectrum
 
 pd.options.display.width = 500
 pd.set_option("display.max_colwidth", 100)
@@ -181,7 +183,7 @@ def main():
         "spectrum",
         nargs="?",
         type=str,
-        default="/home/m/Dropbox/appy/zumpy/zumpy/raman/ramanlib/samples/2269v2-bod-1--532-1200_0001.jdx",
+        default="/home/mp/dev/zuy/src/zuy/data/raman/rutile.jdx",
         help="Path to the spectrum",
     )
     p.add_argument(
