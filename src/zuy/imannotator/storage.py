@@ -32,8 +32,13 @@ class AnnotationStore:
         if not isinstance(raw, dict):
             return {"version": 1, "images": {}}
 
+        version = raw.get("version", 1)
+        if type(version) is not int or version not in (1, 2):
+            raise ValueError(f"Unsupported annotation version: {version!r}")
+        for image, entry in (raw.get("images") or {}).items():
+            self._parse_shapes(image, (entry or {}).get("shapes") or [])
         return {
-            "version": raw.get("version", 1),
+            "version": version,
             "images": raw.get("images", {}) or {},
         }
 
@@ -78,6 +83,9 @@ class AnnotationStore:
     # -------------------------
     def add_image(self, image: str, shapes: list[Shape]) -> None:
         new_shapes = [s.to_dict() for s in shapes]
+        self._parse_shapes(image, new_shapes)
+        if any(s.type == "callout" for s in shapes):
+            self.data["version"] = 2
 
         existing = self._find_entry(image)
         if existing and existing.get("shapes") == new_shapes:
@@ -94,7 +102,23 @@ class AnnotationStore:
         entry = self._find_entry(image)
         if not entry:
             return []
-        return [Shape.from_dict(s) for s in entry.get("shapes") or []]
+        return self._parse_shapes(image, entry.get("shapes") or [])
+
+    @staticmethod
+    def _parse_shapes(image: str, raw_shapes: list[Any]) -> list[Shape]:
+        shapes = []
+        numbers: set[int] = set()
+        for index, raw in enumerate(raw_shapes):
+            try:
+                shape = Shape.from_dict(raw)
+                if shape.type == "callout" and shape.number is not None:
+                    if shape.number in numbers:
+                        raise ValueError(f"duplicate callout number {shape.number}")
+                    numbers.add(shape.number)
+                shapes.append(shape)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Image {image!r}, shape {index + 1}: {exc}") from exc
+        return shapes
 
     def is_annotated(self, image: str) -> bool:
         """True if the image has been saved at all, even with zero shapes."""
