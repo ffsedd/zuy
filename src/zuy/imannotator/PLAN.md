@@ -1,6 +1,6 @@
 # Arrow labels for imannotator
 
-Status: Approved for implementation by the user.
+Status: Implemented. User approved proceeding with the documented pre-existing mypy/deptry failures.
 
 ## Goal
 
@@ -83,14 +83,21 @@ Acceptance: exported arrows point to the saved feature coordinate; labels remain
 
 Added two tools and a second toolbar, validated text/number/font controls, directional drag preview, Escape cancellation, bounds constraints, stable numbering, overlay caching and resizing, input shortcut protection, and callout-aware deletion. Export now draws callouts above legacy markers to match the editor overlay. Added seven headless tests exercising actual event handlers with Tcl variables, including history, deletion, invalid input, navigation, reload, and resize/cache invalidation.
 
-Checks: `uv run ruff format .`, `uv run ruff check --fix --unsafe-fixes .`, `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. `uv run mypy .` still reports the same 6 existing errors in 5 unrelated files; `uv run deptry .` still reports the same 4 baseline issues. `uv run pytest` passed (95 tests, 5 existing SciPy warnings). Initial new lint findings were corrected before the final sequence. Tk 9 is installed; no working display or Xvfb is available, so window-level manual interaction remains unavailable and will be recorded in final verification. Commit hash recorded after commit.
+Checks: `uv run ruff format .`, `uv run ruff check --fix --unsafe-fixes .`, `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. `uv run mypy .` still reports the same 6 existing errors in 5 unrelated files; `uv run deptry .` still reports the same 4 baseline issues. `uv run pytest` passed (95 tests, 5 existing SciPy warnings). Initial new lint findings were corrected before the final sequence. Tk 9 is installed; no working display or Xvfb is available, so window-level manual interaction remains unavailable and will be recorded in final verification. Commit: `3fbb51f`.
 
 
 Add tools, text/number/font controls, drag preview, cancellation, image bounds handling, numbering rules, input focus protection, and callout hit testing. Connect overlay invalidation to add/delete/clear, undo/redo, load, and viewport changes. Use small pure helpers for numbering and geometry where practical.
 
 Acceptance: create both variants, cancel without modifying history, save/reopen, navigate, undo/redo, delete, and resize successfully. Typing shortcut characters in text fields never navigates or activates tools. Preview and export use the same callout layout.
 
-### 4. Documentation and end-to-end verification — Pending
+### 4. Documentation and end-to-end verification — Done
+
+Added the annotator guide and root README link. Added an end-to-end editor-handler save/reload/export test, including mixed-shape overlay order and exact scaled-overlay comparisons at 0.5×, 1×, and 1.5×.
+
+Checks (in required order): `uv run ruff format .` passed; `uv run ruff check --fix --unsafe-fixes .` passed; `uv run mypy .` reported the same 6 baseline errors in 5 unrelated files; `uv run deptry .` reported the same 4 baseline dependency issues; `uv run pytest` passed all 96 tests (5 existing SciPy warnings). Final `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. No dependencies or quality settings changed.
+
+The display became available during final verification. Ran a real Tk window with generated canvas mouse events for both label types, undo/redo, save and reload. Inspected a rendered mixed-annotation sample and window captures at 1100×760 and 900×650 after allowing the existing resize debounce to settle; labels, arrow directions, and scaling were correct and controls remained visible. Live viewport scales were approximately 1.222 and 1.0. Earlier lack of display did not remain a blocker. Inspection artifacts were generated under `/tmp/imannotator-*.png` and are not repository files. Commit hash recorded after commit.
+
 
 Document placement direction, shortcuts, numbering rules, font sizing, version compatibility, and export usage in the repository README or a linked annotator guide. Add an end-to-end temporary-image/YAML/export test and manually inspect a representative output image and GUI at multiple viewport sizes.
 

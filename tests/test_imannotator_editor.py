@@ -157,3 +157,43 @@ def test_shortcuts_ignored_in_inputs(editor, widget_type):
     callback.assert_not_called()
     editor._key(SimpleNamespace(widget=editor.canvas), callback)
     callback.assert_called_once()
+
+
+def test_gui_save_reload_export_workflow(editor, tmp_path):
+    from PIL import ImageChops, ImageDraw
+
+    from zuy.imannotator.callouts import callout_overlay
+    from zuy.imannotator.draw import draw_shape, render
+
+    e = editor
+    place(e)
+    e.set_tool("text")
+    place(e, tip=(80, 250), label=(240, 230))
+    # A later legacy mark must remain below callouts, like the canvas overlay.
+    e.shapes.append(Shape("cross", 200, 40, size=30))
+    e.save()
+    expected_shapes = list(e.shapes)
+    e.store = AnnotationStore(e.store.path)
+    e.store.load_yaml()
+    e.update_view = Mock()
+    e.load()
+    assert e.shapes == expected_shapes
+    assert e.store.data["version"] == 2
+    output = tmp_path / "exported"
+    assert render(e.store.path, out_dir=output) == 0
+    expected = e.img.copy()
+    draw = ImageDraw.Draw(expected)
+    for shape in e.shapes:
+        if shape.type != "callout":
+            draw_shape(draw, shape)
+    overlay = callout_overlay(e.img.size, e.shapes)
+    expected.paste(overlay, (0, 0), overlay)
+    with Image.open(output / "first_x.png") as exported:
+        assert ImageChops.difference(exported, expected).getbbox() is None
+    for scale in (0.5, 1.0, 1.5):
+        e.view.scale = scale
+        e.redraw()
+        resized = overlay.resize(
+            (round(400 * scale), round(300 * scale)), Image.Resampling.LANCZOS
+        )
+        assert e._overlay_photo.tobytes() == resized.tobytes()
