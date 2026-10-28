@@ -47,7 +47,7 @@ Use the Pillow callout renderer in `draw.py` and a scaled RGBA callout overlay i
 
 Each step begins Pending. On approval, implement one step at a time, run its checks, and create one focused local commit before starting the next. Record its actual hash and results below afterward; do not amend a commit to insert its own hash. Do not push.
 
-### 1. Model and YAML compatibility — Blocked
+### 1. Model and YAML compatibility — Done
 
 Implemented model fields/validation, version handling, image-specific errors, duplicate-number rejection, and mixed legacy/callout fixtures and tests. No commit created because required repository checks fail in unchanged code.
 
@@ -61,14 +61,19 @@ Checks performed:
 - `uv run ruff format --check .`: passed, 57 files.
 - `uv run ruff check .`: passed.
 
-Next action: obtain approval to proceed with these documented pre-existing check failures, or approval to expand scope to repair them. Steps 2–4 have not started. The user’s repository instructions prohibit committing this step as complete without that approval.
+User approved continuing with these documented pre-existing failures. Step 1 is already committed as `4b48642` (present when work resumed); no duplicate commit was created.
 
 
 Extend the model, add callout validation, and implement version handling in the store. Add focused tests for both callout variants, old-file loading, mixed-shape round trips, unchanged timestamps, relative paths, and invalid/unsupported input.
 
 Acceptance: existing shapes round-trip unchanged; new fields survive save/reload; malformed callouts produce useful errors; version-1 fixtures continue to load.
 
-### 2. Shared layout and export — Pending
+### 2. Shared layout and export — Done
+
+Implemented shared Pillow layout/rendering, constrained placement, hit distance, cached fonts, and export dispatch. Added 13 tests covering eight arrow directions, degenerate geometry, edge constraints, Unicode, and shared-renderer export parity. Inspected diff; no unrelated formatter/autofix changes.
+
+Checks: `uv run ruff format .`, `uv run ruff check --fix --unsafe-fixes .`, `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. `uv run mypy .` reported 6 existing errors in 5 unrelated Raman files; `uv run deptry .` reported 4 existing dependency issues. `uv run pytest` passed (88 tests, 5 existing SciPy warnings). Focused storage/render tests passed (31). Proceeding under the user's approval of the baseline failures. Commit hash recorded after commit.
+
 
 Implement callout layout/rendering and integrate export dispatch. Add geometry and image-output tests for all arrow directions, horizontal/vertical and coincident endpoints, label-boundary attachment, edge placement, varying font sizes, Unicode, and mixed legacy/new shapes. Verify unchanged rendering of existing shapes.
 

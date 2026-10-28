@@ -4,6 +4,7 @@ from typing import Callable, Iterator
 
 from PIL import Image, ImageDraw
 
+from .callouts import draw_callout
 from .models import Shape
 from .storage import AnnotationStore
 
@@ -41,6 +42,7 @@ def _draw_rectangle(draw: ImageDraw.ImageDraw, s: Shape) -> None:
 
 
 DRAWERS: dict[str, Callable[[ImageDraw.ImageDraw, Shape], None]] = {
+    "callout": draw_callout,
     "circle": _draw_circle,
     "cross": _draw_cross,
     "rectangle": _draw_rectangle,
