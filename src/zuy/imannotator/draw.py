@@ -78,8 +78,13 @@ def render_image(img_path: Path, shapes: list[Shape], out_path: Path) -> None:
     with Image.open(img_path) as im:
         img = im.convert("RGB")
     draw = ImageDraw.Draw(img)
+    # Keep callouts above legacy markers, matching the editor overlay.
     for s in shapes:
-        draw_shape(draw, s)
+        if s.type != "callout":
+            draw_shape(draw, s)
+    for s in shapes:
+        if s.type == "callout":
+            draw_shape(draw, s)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
 

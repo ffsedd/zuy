@@ -1,13 +1,19 @@
 import argparse
 import tkinter as tk
 from dataclasses import dataclass
+from math import hypot
+from tkinter import messagebox
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Literal
 
 from PIL import Image, ImageTk
 
-from .models import Shape, ShapeType
+from .callouts import callout_distance, callout_overlay, constrain_callout, next_number
+from .models import Shape
+
 from .storage import AnnotationStore
+
+ToolType = Literal["circle", "cross", "rectangle", "numbered", "text"]
 
 # =========================
 # CONFIG
@@ -24,10 +30,12 @@ class ToolStyle:
     key: str
 
 
-TOOLS: dict[ShapeType, ToolStyle] = {
+TOOLS: dict[ToolType, ToolStyle] = {
     "circle": ToolStyle("Circle", "c"),
     "cross": ToolStyle("Cross", "x"),
     "rectangle": ToolStyle("Rect", "r"),
+    "numbered": ToolStyle("Numbered label", "b"),
+    "text": ToolStyle("Text label", "t"),
 }
 
 
@@ -99,9 +107,16 @@ class ImageEditor:
         if log_path.is_file():
             self.store.load_yaml()
 
-        self.tool: ShapeType = "circle"
+        self.tool: ToolType = "circle"
         self.size = tk.IntVar(value=DEFAULT_SHAPE_SIZE)
         self.status = tk.StringVar()
+        self.label_text = tk.StringVar()
+        self.label_number = tk.StringVar(value="1")
+        self.font_size = tk.StringVar(value="32")
+        self._number_shapes = None
+        self._overlay_key = None
+        self._overlay_photo = None
+        self._preview_photo = None
 
         self.view = Viewport()
         self.img: Optional[Image.Image] = None
@@ -152,6 +167,20 @@ class ImageEditor:
         tk.Button(bar, text="Clear", command=self.clear).pack(side=tk.LEFT)
         tk.Button(bar, text="Save (S)", command=self.save).pack(side=tk.RIGHT)
 
+        labels = tk.Frame(self.root)
+        labels.pack(fill=tk.X)
+        tk.Label(labels, text="Text").pack(side=tk.LEFT)
+        tk.Entry(labels, textvariable=self.label_text, width=35).pack(side=tk.LEFT)
+        tk.Label(labels, text="Next number").pack(side=tk.LEFT)
+        tk.Spinbox(labels, from_=1, to=999999, textvariable=self.label_number, width=7).pack(
+            side=tk.LEFT
+        )
+        tk.Label(labels, text="Font size (image px)").pack(side=tk.LEFT)
+        tk.Spinbox(labels, from_=1, to=300, textvariable=self.font_size, width=6).pack(
+            side=tk.LEFT
+        )
+        tk.Label(labels, text="Drag feature → label; Esc cancels").pack(side=tk.LEFT)
+
         tk.Label(self.root, textvariable=self.status, anchor="w").pack(side=tk.BOTTOM, fill=tk.X)
 
         self.canvas = tk.Canvas(self.root, bg="black", highlightthickness=0)
@@ -189,10 +218,11 @@ class ImageEditor:
             seq = k if k.startswith("<") else f"<Key-{k}>"
             self.root.bind(seq, lambda e, f=fn: self._key(e, f))
 
+        self.root.bind("<Escape>", lambda e: self.cancel_drag())
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _key(self, e, fn):
-        if isinstance(e.widget, tk.Spinbox):
+        if isinstance(e.widget, (tk.Spinbox, tk.Entry, tk.Text)):
             return
         fn()
 
@@ -202,6 +232,9 @@ class ImageEditor:
         return str(self.files[self.i])
 
     def load(self):
+        self.drag_start = None
+        self.hover = None
+        self._number_shapes = None
         self.shapes = self.store.get_shapes(self.path)  # returns a fresh list
         self.undo_stack.clear()
         self.redo_stack.clear()
@@ -230,8 +263,28 @@ class ImageEditor:
         self.canvas.delete("all")
         if self.photo:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
+        shape_key = tuple(self.shapes)
+        if self._number_shapes != shape_key:
+            self.label_number.set(str(next_number(self.shapes)))
+            self._number_shapes = shape_key
         for s in self.shapes:
-            self.renderer.draw(s)
+            if s.type != "callout":
+                self.renderer.draw(s)
+        if self.img is not None:
+            key = (shape_key, self.img.size, self.view.scale)
+            if key != self._overlay_key:
+                overlay = callout_overlay(self.img.size, self.shapes)
+                self._overlay_photo = ImageTk.PhotoImage(
+                    overlay.resize(
+                        (
+                            max(1, int(self.img.width * self.view.scale)),
+                            max(1, int(self.img.height * self.view.scale)),
+                        ),
+                        Image.Resampling.LANCZOS,
+                    )
+                )
+                self._overlay_key = key
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self._overlay_photo)
         self._draw_cursor_preview()
         self._update_status()
 
@@ -288,6 +341,10 @@ class ImageEditor:
     def on_click(self, e):
         self.canvas.focus_set()
         ix, iy = self.view.to_img(e.x, e.y)
+        if self.tool in ("numbered", "text") and (
+            self.img is None or not (0 <= ix < self.img.width and 0 <= iy < self.img.height)
+        ):
+            return
         if self.tool in ("circle", "cross"):
             self._push_undo()
             self.shapes.append(Shape(self.tool, ix, iy, size=self.size.get()))
@@ -295,7 +352,57 @@ class ImageEditor:
         else:
             self.drag_start = (ix, iy)
 
+    def cancel_drag(self):
+        self.drag_start = None
+        self._preview_photo = None
+        self.redraw()
+
+    def _make_callout(self, tip, label):
+        if self.img is None:
+            raise ValueError("No image loaded")
+        try:
+            size = float(self.font_size.get())
+            number = int(self.label_number.get()) if self.tool == "numbered" else None
+        except ValueError as exc:
+            raise ValueError("Use a positive integer number and a positive font size") from exc
+        if number is not None and any(
+            s.type == "callout" and s.number == number for s in self.shapes
+        ):
+            raise ValueError(f"Number {number} is already used in this image")
+        shape = Shape(
+            "callout",
+            *tip,
+            x2=label[0],
+            y2=label[1],
+            text=self.label_text.get().strip() if self.tool == "text" else None,
+            number=number,
+            font_size=size,
+        )
+        return constrain_callout(shape, self.img.size)
+
+    def _preview_callout(self, shape):
+        overlay = callout_overlay(self.img.size, [shape])
+        self._preview_photo = ImageTk.PhotoImage(
+            overlay.resize(
+                (
+                    max(1, int(self.img.width * self.view.scale)),
+                    max(1, int(self.img.height * self.view.scale)),
+                ),
+                Image.Resampling.LANCZOS,
+            )
+        )
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=self._preview_photo)
+
     def on_drag(self, e):
+        if self.tool in ("numbered", "text") and self.drag_start:
+            self.redraw()
+            try:
+                self._preview_callout(
+                    self._make_callout(self.drag_start, self.view.to_img(e.x, e.y))
+                )
+            except ValueError as exc:
+                self.status.set(str(exc))
+            return
         if self.tool != "rectangle" or not self.drag_start:
             return
         self.redraw()
@@ -304,6 +411,24 @@ class ImageEditor:
         self.renderer.draw(Shape("rectangle", x0, y0, x2=ix, y2=iy), preview=True)
 
     def on_release(self, e):
+        if self.tool in ("numbered", "text") and self.drag_start:
+            tip = self.drag_start
+            self.drag_start = None
+            self._preview_photo = None
+            label = self.view.to_img(e.x, e.y)
+            if hypot(label[0] - tip[0], label[1] - tip[1]) * self.view.scale < MIN_DRAG_PX:
+                self.redraw()
+                return
+            try:
+                shape = self._make_callout(tip, label)
+            except ValueError as exc:
+                self.redraw()
+                messagebox.showerror("Invalid label", str(exc), parent=self.root)
+                return
+            self._push_undo()
+            self.shapes.append(shape)
+            self.redraw()
+            return
         if self.tool != "rectangle" or not self.drag_start:
             return
         x0, y0 = self.drag_start
@@ -327,7 +452,11 @@ class ImageEditor:
         best, best_d = None, float("inf")
         for idx, s in enumerate(self.shapes):
             cx, cy = s.center
-            d = (cx - ix) ** 2 + (cy - iy) ** 2
+            d = (
+                callout_distance(s, ix, iy)
+                if s.type == "callout"
+                else (cx - ix) ** 2 + (cy - iy) ** 2
+            )
             if d < best_d:
                 best, best_d = idx, d
         if best is not None:
@@ -351,6 +480,7 @@ class ImageEditor:
         self.redraw()
 
     def set_tool(self, t):
+        self._preview_photo = None
         self.tool = t
         self.tool_var.set(t)
         self.drag_start = None

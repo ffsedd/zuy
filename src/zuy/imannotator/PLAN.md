@@ -72,14 +72,19 @@ Acceptance: existing shapes round-trip unchanged; new fields survive save/reload
 
 Implemented shared Pillow layout/rendering, constrained placement, hit distance, cached fonts, and export dispatch. Added 13 tests covering eight arrow directions, degenerate geometry, edge constraints, Unicode, and shared-renderer export parity. Inspected diff; no unrelated formatter/autofix changes.
 
-Checks: `uv run ruff format .`, `uv run ruff check --fix --unsafe-fixes .`, `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. `uv run mypy .` reported 6 existing errors in 5 unrelated Raman files; `uv run deptry .` reported 4 existing dependency issues. `uv run pytest` passed (88 tests, 5 existing SciPy warnings). Focused storage/render tests passed (31). Proceeding under the user's approval of the baseline failures. Commit hash recorded after commit.
+Checks: `uv run ruff format .`, `uv run ruff check --fix --unsafe-fixes .`, `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. `uv run mypy .` reported 6 existing errors in 5 unrelated Raman files; `uv run deptry .` reported 4 existing dependency issues. `uv run pytest` passed (88 tests, 5 existing SciPy warnings). Focused storage/render tests passed (31). Proceeding under the user's approval of the baseline failures. Commit: `dfe1c4d`.
 
 
 Implement callout layout/rendering and integrate export dispatch. Add geometry and image-output tests for all arrow directions, horizontal/vertical and coincident endpoints, label-boundary attachment, edge placement, varying font sizes, Unicode, and mixed legacy/new shapes. Verify unchanged rendering of existing shapes.
 
 Acceptance: exported arrows point to the saved feature coordinate; labels remain readable; layout is deterministic under a known font; degenerate geometry does not crash.
 
-### 3. Editor tools and interaction — Pending
+### 3. Editor tools and interaction — Done
+
+Added two tools and a second toolbar, validated text/number/font controls, directional drag preview, Escape cancellation, bounds constraints, stable numbering, overlay caching and resizing, input shortcut protection, and callout-aware deletion. Export now draws callouts above legacy markers to match the editor overlay. Added seven headless tests exercising actual event handlers with Tcl variables, including history, deletion, invalid input, navigation, reload, and resize/cache invalidation.
+
+Checks: `uv run ruff format .`, `uv run ruff check --fix --unsafe-fixes .`, `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. `uv run mypy .` still reports the same 6 existing errors in 5 unrelated files; `uv run deptry .` still reports the same 4 baseline issues. `uv run pytest` passed (95 tests, 5 existing SciPy warnings). Initial new lint findings were corrected before the final sequence. Tk 9 is installed; no working display or Xvfb is available, so window-level manual interaction remains unavailable and will be recorded in final verification. Commit hash recorded after commit.
+
 
 Add tools, text/number/font controls, drag preview, cancellation, image bounds handling, numbering rules, input focus protection, and callout hit testing. Connect overlay invalidation to add/delete/clear, undo/redo, load, and viewport changes. Use small pure helpers for numbering and geometry where practical.
 
