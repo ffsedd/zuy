@@ -7,7 +7,10 @@ uv run semangui --dir /path/to/images
 ```
 
 Choose **Numbered label (B)** or **Text label (T)**. Set the text or next number and
-font size in the second toolbar. Press on the image feature, drag to the label
+font size in the second toolbar. Use **Color…** to choose the arrow, label text,
+and border color for new callouts. The button shows the selected color; existing
+callouts retain their saved colors. The white label background and arrow halo
+remain for contrast. Press on the image feature, drag to the label
 position, and release. The arrow points back to the feature. Horizontal and
 vertical arrows work. A drag shorter than three screen pixels is ignored.
 
@@ -19,7 +22,7 @@ renumber the others. Undo, redo, deletion, and image loading recalculate the nex
 number from the current annotations. Failed or cancelled placement consumes no
 number.
 
-Font size is measured in original-image pixels, independently of the circle or
+Font size accepts values from 1 to 300 original-image pixels, independently of the circle or
 cross Size control. Labels and arrows scale with the image when resizing the
 window. Label boxes stay inside the image where possible; oversized text is
 centered and clipped at the image boundary. Use a smaller font for long labels.

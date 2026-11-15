@@ -25,6 +25,8 @@ def editor(tmp_path, monkeypatch):
     e.label_number = tk.StringVar(interp, value="1")
     e.label_text = tk.StringVar(interp, value="částice α")
     e.font_size = tk.StringVar(interp, value="24")
+    e.label_color = tk.StringVar(interp, value="#000000")
+    e.color_button = Mock()
     e.tool_var = tk.StringVar(interp, value=e.tool)
     e.view = Viewport()
     e.img = Image.new("RGB", (400, 300), "gray")
@@ -197,3 +199,95 @@ def test_gui_save_reload_export_workflow(editor, tmp_path):
             (round(400 * scale), round(300 * scale)), Image.Resampling.LANCZOS
         )
         assert e._overlay_photo.tobytes() == resized.tobytes()
+
+
+@pytest.mark.parametrize("value", ["1e20", "301", "0", "-1", "nan", "inf", ""])
+def test_invalid_font_size_is_reported_without_mutation(editor, value):
+    from zuy.imannotator.gui import messagebox
+
+    editor.font_size.set(value)
+    editor.on_click(event(30, 40))
+    editor.on_drag(event(200, 100))
+    assert editor._preview_photo is None
+    editor.on_release(event(200, 100))
+    assert not editor.shapes and not editor.undo_stack
+    messagebox.showerror.assert_called_once()
+
+
+def test_font_loading_failure_is_reported(editor, monkeypatch):
+    from zuy.imannotator.gui import messagebox
+
+    monkeypatch.setattr(
+        "zuy.imannotator.gui.constrain_callout", Mock(side_effect=OSError("font unavailable"))
+    )
+    place(editor)
+    assert not editor.shapes and not editor.undo_stack
+    messagebox.showerror.assert_called_once()
+
+
+def test_legacy_and_text_placement_preserve_custom_number(editor):
+    e = editor
+    place(e)
+    e.label_number.set("10")
+    e.set_tool("cross")
+    e.on_click(event(50, 50))
+    assert e.label_number.get() == "10"
+    e.set_tool("text")
+    place(e)
+    assert e.label_number.get() == "10"
+    e.undo()
+    e.delete_last()
+    assert e.label_number.get() == "10"
+    e.set_tool("numbered")
+    place(e)
+    assert e.shapes[-1].number == 10
+    assert e.label_number.get() == "11"
+
+
+def test_large_image_preview_allocates_only_viewport(editor, monkeypatch):
+    from zuy.imannotator.callouts import callout_overlay
+
+    e = editor
+    e.img = Image.new("RGB", (8192, 6144))
+    e.view.scale = 0.125
+    # Warm the committed overlay; the drag preview must not allocate image-sized RGBA.
+    e.redraw()
+    render = Mock(wraps=callout_overlay)
+    monkeypatch.setattr("zuy.imannotator.gui.callout_overlay", render)
+    e.on_click(event(20, 20))
+    e.on_drag(event(100, 100))
+    assert e._preview_photo.size == (1024, 768)
+    render.assert_called_once()
+    assert render.call_args.args[0] == (1024, 768)
+    assert render.call_args.kwargs == {"scale": 0.125}
+    assert e._preview_photo.getbbox() is not None
+
+
+def test_color_picker_applies_only_to_new_labels_and_survives_reload(editor, monkeypatch):
+    e = editor
+    place(e)
+    original = e.shapes[0]
+    choose = Mock(return_value=((224, 32, 64), "#e02040"))
+    monkeypatch.setattr("zuy.imannotator.gui.colorchooser.askcolor", choose)
+    e.choose_label_color()
+    assert e.label_color.get() == "#e02040"
+    assert e.shapes == [original]
+    assert len(e.undo_stack) == 1
+    e.color_button.configure.assert_called_once_with(bg="#e02040", fg="white")
+    place(e, label=(200, 180))
+    assert e.shapes[-1].color == "#e02040"
+    assert e.shapes[0].color == "#000000"
+    e.save()
+    loaded = AnnotationStore(e.store.path)
+    loaded.load_yaml()
+    assert loaded.get_shapes(e.path) == e.shapes
+
+
+def test_cancel_color_picker_preserves_selection_and_history(editor, monkeypatch):
+    monkeypatch.setattr(
+        "zuy.imannotator.gui.colorchooser.askcolor", Mock(return_value=(None, None))
+    )
+    editor.choose_label_color()
+    assert editor.label_color.get() == "#000000"
+    editor.color_button.configure.assert_not_called()
+    assert not editor.shapes and not editor.undo_stack and not editor.dirty

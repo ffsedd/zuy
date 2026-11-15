@@ -65,3 +65,31 @@ def test_export_matches_shared_renderer(tmp_path):
     )
     with Image.open(output) as actual:
         assert ImageChops.difference(actual, expected).getbbox() is None
+
+
+def test_color_used_in_preview_and_export(tmp_path):
+    from dataclasses import replace
+
+    color = (224, 32, 64)
+    shape = label(color="#e02040")
+    overlay = callout_overlay((320, 240), [shape])
+    assert (*color, 255) in overlay.getdata()
+    assert (0, 0, 0, 255) not in overlay.getdata()
+    preview = callout_overlay((160, 120), [shape], scale=0.5)
+    assert (*color, 255) in preview.getdata()
+    source = tmp_path / "source.png"
+    output = tmp_path / "colored.png"
+    Image.new("RGB", (320, 240), "gray").save(source)
+    render_image(source, [shape], output)
+    with Image.open(output) as exported:
+        assert color in exported.getdata()
+    # Missing color in old YAML preserves the old black appearance.
+    legacy = callout_overlay((320, 240), [label()])
+    explicit_black = callout_overlay((320, 240), [replace(shape, color="#000000")])
+    assert legacy.tobytes() == explicit_black.tobytes()
+
+
+@pytest.mark.parametrize("color", ["red", "#fff", "#gg0011", "", 123])
+def test_invalid_callout_color(color):
+    with pytest.raises(ValueError, match="color"):
+        label(color=color)

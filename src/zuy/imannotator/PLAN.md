@@ -6,7 +6,7 @@ Status: Implemented. User approved proceeding with the documented pre-existing m
 
 Add numbered and free-text callouts to `semangui`, persist them in `annotations.yaml`, and render them with `semandraw`. Preserve existing circles, crosses, rectangles, file paths, autosave, and undo/redo behavior.
 
-## Current implementation
+## Pre-implementation baseline (historical)
 
 - `models.py`: frozen `Shape` dataclass; three shape types, image-space coordinates, optional size and second endpoint. Serialization omits `None`; loading ignores unknown fields but does not validate shape-specific requirements.
 - `storage.py`: version-1 YAML, image-relative keys, atomic writes, and timestamps preserved for unchanged shape lists. Storage already serializes through `Shape`.
@@ -119,4 +119,22 @@ Inspect every autofix; revert only unrelated changes created by this work. Refor
 
 ## Planning validation
 
-Inspected all four annotator modules, repository status, project configuration, test inventory, and ancestor/repository instruction locations. Working tree was clean. This proposal changes documentation only; no implementation, Python quality checks, or GUI tests have run.
+Inspected all four annotator modules, repository status, project configuration, test inventory, and ancestor/repository instruction locations. Working tree was clean. At planning time only documentation had changed; no implementation checks had run yet. Completed implementation checks and GUI verification are recorded above.
+
+## GUI review fixes — Done (uncommitted)
+
+Fixed the three issues identified in the follow-up review:
+
+- Drag previews render directly at viewport resolution using shared image-space layout; committed overlays and export retain their existing rendering. A regression test verifies that an 8192×6144 image allocates only a 1024×768 preview. The measured preview renderer averaged 1.12 ms/frame over 30 iterations, compared with the review's 1.18 seconds/frame for full-resolution allocation/resizing; these measurements exclude Tk image transfer and other event-handler work.
+- New callout font input is limited to the toolbar's 1–300 image-pixel range; non-finite values are rejected and font-loading errors produce normal validation messages. Tests cover extreme, empty, non-finite, and out-of-range input without history mutation.
+- Automatic next-number refresh tracks numbered callouts only, preserving a custom number when adding/removing legacy markers or text labels. Image loading still resets the default.
+
+Relabeled the original implementation description as a historical baseline and clarified the planning-time validation note. Updated the user guide with font limits.
+
+Validation: all required commands ran in order. `uv run ruff format .` and `uv run ruff check --fix --unsafe-fixes .` passed; `uv run mypy .` reports only the same 6 pre-existing errors in 5 unrelated Raman files; `uv run deptry .` reports the same 4 existing dependency issues; `uv run pytest` passes 106 tests with 5 existing SciPy warnings. Final `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. The newly introduced tuple typing issue found during development was fixed before the final sequence. No dependency/configuration changes. These are ordinary bug fixes and remain uncommitted under the user's global working preferences.
+
+## Arrow-label color picker — Done (uncommitted)
+
+Added a native Color picker button with a swatch in the label toolbar. The selected color applies to the arrow, label text, and border of new callouts; the white background/halo remain. Existing callouts retain their own colors. Optional `color: '#RRGGBB'` is persisted per callout; missing color defaults to the original black styling. Picker cancellation does not modify selection, annotations, or history. Prior uncommitted GUI fixes were preserved.
+
+Validation: focused annotator tests passed (57). In the required full sequence, `uv run ruff format .` and `uv run ruff check --fix --unsafe-fixes .` passed; `uv run mypy .` reported the same 6 pre-existing errors in unrelated files; `uv run deptry .` reported the same 4 existing issues; `uv run pytest` passed 114 tests with 5 existing SciPy warnings. Final `uv run ruff format --check .`, `uv run ruff check .`, and `git diff --check` passed. A live Tk window verified button invocation and swatch update with the dialog result supplied programmatically. No dependencies or quality settings changed. No commit created for this ordinary feature change.

@@ -1,8 +1,8 @@
 import argparse
 import tkinter as tk
 from dataclasses import dataclass
-from math import hypot
-from tkinter import messagebox
+from math import hypot, isfinite
+from tkinter import colorchooser, messagebox
 from pathlib import Path
 from typing import Callable, List, Optional, Literal
 
@@ -113,6 +113,7 @@ class ImageEditor:
         self.label_text = tk.StringVar()
         self.label_number = tk.StringVar(value="1")
         self.font_size = tk.StringVar(value="32")
+        self.label_color = tk.StringVar(value="#000000")
         self._number_shapes = None
         self._overlay_key = None
         self._overlay_photo = None
@@ -179,6 +180,10 @@ class ImageEditor:
         tk.Spinbox(labels, from_=1, to=300, textvariable=self.font_size, width=6).pack(
             side=tk.LEFT
         )
+        self.color_button = tk.Button(
+            labels, text="Color…", command=self.choose_label_color, bg="#000000", fg="white"
+        )
+        self.color_button.pack(side=tk.LEFT)
         tk.Label(labels, text="Drag feature → label; Esc cancels").pack(side=tk.LEFT)
 
         tk.Label(self.root, textvariable=self.status, anchor="w").pack(side=tk.BOTTOM, fill=tk.X)
@@ -264,9 +269,12 @@ class ImageEditor:
         if self.photo:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
         shape_key = tuple(self.shapes)
-        if self._number_shapes != shape_key:
+        number_key = tuple(
+            sorted(s.number for s in self.shapes if s.type == "callout" and s.number is not None)
+        )
+        if self._number_shapes != number_key:
             self.label_number.set(str(next_number(self.shapes)))
-            self._number_shapes = shape_key
+            self._number_shapes = number_key
         for s in self.shapes:
             if s.type != "callout":
                 self.renderer.draw(s)
@@ -357,6 +365,17 @@ class ImageEditor:
         self._preview_photo = None
         self.redraw()
 
+    def choose_label_color(self):
+        _, color = colorchooser.askcolor(
+            color=self.label_color.get(), title="Arrow label color", parent=self.root
+        )
+        if color is None:
+            return
+        self.label_color.set(color)
+        red, green, blue = (int(color[i : i + 2], 16) for i in (1, 3, 5))
+        foreground = "black" if 299 * red + 587 * green + 114 * blue >= 128000 else "white"
+        self.color_button.configure(bg=color, fg=foreground)
+
     def _make_callout(self, tip, label):
         if self.img is None:
             raise ValueError("No image loaded")
@@ -365,6 +384,8 @@ class ImageEditor:
             number = int(self.label_number.get()) if self.tool == "numbered" else None
         except ValueError as exc:
             raise ValueError("Use a positive integer number and a positive font size") from exc
+        if not isfinite(size) or not 1 <= size <= 300:
+            raise ValueError("Font size must be between 1 and 300 image pixels")
         if number is not None and any(
             s.type == "callout" and s.number == number for s in self.shapes
         ):
@@ -377,20 +398,20 @@ class ImageEditor:
             text=self.label_text.get().strip() if self.tool == "text" else None,
             number=number,
             font_size=size,
+            color=self.label_color.get(),
         )
-        return constrain_callout(shape, self.img.size)
+        try:
+            return constrain_callout(shape, self.img.size)
+        except (OSError, OverflowError) as exc:
+            raise ValueError("Unable to render the selected font size") from exc
 
     def _preview_callout(self, shape):
-        overlay = callout_overlay(self.img.size, [shape])
-        self._preview_photo = ImageTk.PhotoImage(
-            overlay.resize(
-                (
-                    max(1, int(self.img.width * self.view.scale)),
-                    max(1, int(self.img.height * self.view.scale)),
-                ),
-                Image.Resampling.LANCZOS,
-            )
+        size = (
+            max(1, int(self.img.width * self.view.scale)),
+            max(1, int(self.img.height * self.view.scale)),
         )
+        overlay = callout_overlay(size, [shape], scale=self.view.scale)
+        self._preview_photo = ImageTk.PhotoImage(overlay)
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self._preview_photo)
 
     def on_drag(self, e):

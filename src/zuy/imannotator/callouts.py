@@ -74,33 +74,38 @@ def constrain_callout(s: Shape, size: tuple[int, int]) -> Shape:
     )
 
 
-def draw_callout(draw: ImageDraw.ImageDraw, s: Shape) -> None:
+def draw_callout(draw: ImageDraw.ImageDraw, s: Shape, scale: float = 1.0) -> None:
     layout = layout_callout(s)
+    color = s.color or "black"
+    # Measure in image coordinates; rasterize directly at the viewport scale for previews.
+    width = max(1, round(layout.width * scale))
+    start = tuple(value * scale for value in layout.start)
+    tip = tuple(value * scale for value in layout.tip)
     if layout.head:
-        draw.line([layout.start, layout.tip], fill="white", width=layout.width * 3)
-        draw.polygon(layout.head, fill="black")
-        draw.line([layout.start, layout.tip], fill="black", width=layout.width)
+        draw.line([start, tip], fill="white", width=width * 3)
+        draw.polygon([(x * scale, y * scale) for x, y in layout.head], fill=color)
+        draw.line([start, tip], fill=color, width=width)
     draw.rounded_rectangle(
-        layout.box,
-        radius=(layout.box[3] - layout.box[1]) / 4,
+        tuple(value * scale for value in layout.box),
+        radius=(layout.box[3] - layout.box[1]) * scale / 4,
         fill="white",
-        outline="black",
-        width=layout.width,
+        outline=color,
+        width=width,
     )
     draw.text(
-        layout.text_origin,
+        (layout.text_origin[0] * scale, layout.text_origin[1] * scale),
         s.text if s.text is not None else str(s.number),
-        fill="black",
-        font=callout_font(max(1, round(s.font_size or 1))),
+        fill=color,
+        font=callout_font(max(1, round((s.font_size or 1) * scale))),
     )
 
 
-def callout_overlay(size: tuple[int, int], shapes: list[Shape]) -> Image.Image:
+def callout_overlay(size: tuple[int, int], shapes: list[Shape], scale: float = 1.0) -> Image.Image:
     overlay = Image.new("RGBA", size)
     draw = ImageDraw.Draw(overlay)
     for shape in shapes:
         if shape.type == "callout":
-            draw_callout(draw, shape)
+            draw_callout(draw, shape, scale)
     return overlay
 
 

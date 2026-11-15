@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
 from math import isfinite
+import re
 from typing import Any, Literal
 
 ShapeType = Literal["circle", "cross", "rectangle", "callout"]
@@ -19,10 +20,15 @@ class Shape:
     text: str | None = None
     number: int | None = None
     font_size: float | None = None
+    color: str | None = None
 
     def __post_init__(self) -> None:
         if self.type != "callout":
             return
+        if self.color is not None and (
+            not isinstance(self.color, str) or re.fullmatch(r"#[0-9a-fA-F]{6}", self.color) is None
+        ):
+            raise ValueError("callout color must be a #RRGGBB hex color")
         for name in ("x", "y", "x2", "y2", "font_size"):
             value = getattr(self, name)
             if (
